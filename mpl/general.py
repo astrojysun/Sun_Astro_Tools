@@ -102,6 +102,9 @@ def mpl_setup(figwidth='half', aspect=0.8, lw=1.0, ms=1.0, fs=11.0,
     plt.rcParams['legend.framealpha'] = 0.2
     plt.rcParams['legend.edgecolor'] = u'0.0'
 
+    # hatch
+    plt.rcParams['hatch.color'] = 'gray'
+
     for key in rcParams:
         plt.rcParams[key] = rcParams[key]
 
