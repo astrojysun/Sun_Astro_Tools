@@ -2,7 +2,6 @@ from __future__ import (division, print_function, absolute_import,
                         unicode_literals)
 
 import numpy as np
-from scipy.stats import norm
 
 from .stats import gaussNd_pdf
 
@@ -78,6 +77,8 @@ def lnpost_line(params, data=None, cov=None, intrinsic_scatter='none',
     """
     Natural logarithm of the posterior probability of a line model.
     """
+    from scipy.stats import norm
+
     if lnprior is None:
         lnprior = lnprior_flat
     lnpr = lnprior(params, *priorargs)
@@ -145,110 +146,124 @@ def lnpost_gauss2d(params, data=None, cov=None,
     return lnpr + lnlike
 
 
-def lnpost_line_censored(params, data=None, cov=None,
-                         intrinsic_scatter='none',
-                         lnprior=None, priorargs=(),
-                         bounds=None, force_homoscedastic=True):
-    """
-    Natural logarithm of the posterior probability of a line model,
-    with the presence of data censoring.
-    """
-    if lnprior is None:
-        lnprior = lnprior_flat
-    lnpr = lnprior(params, *priorargs)
-    if not np.isfinite(lnpr):
-        return -np.inf
-
-    if data is None:
-        raise ValueError("Data needed!")
-
-    if cov is None:
-        cov = np.zeros(2, 2)
-
-    if intrinsic_scatter == 'none':
-        if np.all(cov == 0):
-            raise ValueError("`intrinsic_scatter` should not be 'none' "
-                             "if `cov` is not provided or all zero.")
-        incl, inter, x0, logsx = params
-        scatter = 0.0
-    elif intrinsic_scatter in ['vert', 'perp']:
-        incl, inter, logs, x0, logsx = params
-        scatter = 10**logs
-    else:
-        raise ValueError("`intrinsic_scatter` should be 'none', "
-                         "'vert' or 'perp'.")
-    slope = np.tan(incl)
-    y0 = slope * x0 + inter
-    xwidth = 10**logsx
-    normarr = np.array([[1.0, slope], [slope, slope**2]])
-    cov_model = normarr * xwidth**2
-    if intrinsic_scatter == 'vert':
-        cov_model[1, 1] += scatter**2
-    else:
-        normarr = np.array([[slope**2, -slope], [-slope, 1.0]])
-        cov_model += normarr * scatter**2 / (1 + slope**2)
-    cov_whole = cov + cov_model.reshape(1, 2, 2)
-    lnlike = np.sum(gaussNd_pdf(np.array(data),
-                                mean=np.array([x0, y0]),
-                                cov_matrix=cov_whole,
-                                return_log=True))
-    if bounds is None:
-        return lnlike + lnpr
-
-    from scipy.integrate import dblquad
-
-    xmin, xmax, ymin, ymax = bounds
-
-    def integrand(y, x, cov_matrix):
-        return gaussNd_pdf(np.array((x, y)),
-                           mean=np.array([x0, y0]),
-                           cov_matrix=cov_matrix)
-
-    npoint = data.shape[0]
-    if cov_whole.shape[0] == 1 or force_homoscedastic:
-        cov_whole = np.median(cov_whole, axis=0)
-        norm_factor = dblquad(integrand, xmin, xmax, ymin, ymax,
-                              args=(cov_whole, ))[0]
-        lnlike -= npoint * np.log(norm_factor)
-        return lnpr + lnlike
-    else:
-        for ipoint in range(npoint):
-            norm_factor = dblquad(integrand, xmin, xmax, ymin, ymax,
-                                  args=(cov_whole[ipoint, :, :], ))[0]
-            lnlike -= np.log(norm_factor)
-        return lnpr + lnlike
-
-
-# def lnpost2D_censored(params, lnpost_func,
-#                       data=None, cov=None, bounds=None,
-#                       **kwargs):
+# def lnpost_line_censored(params, data=None, cov=None,
+#                          intrinsic_scatter='none',
+#                          lnprior=None, priorargs=(),
+#                          bounds=None, force_homoscedastic=True):
 #     """
-#     Adapt 2D lnpost functions to correct for data-censoring.
+#     Natural logarithm of the posterior probability of a line model,
+#     with the presence of data censoring.
 #     """
-#     lnpost = lnpost_func(params, data=data, cov=cov, **kwargs)
+#     if lnprior is None:
+#         lnprior = lnprior_flat
+#     lnpr = lnprior(params, *priorargs)
+#     if not np.isfinite(lnpr):
+#         return -np.inf
 
+#     if data is None:
+#         raise ValueError("Data needed!")
+
+#     if cov is None:
+#         cov = np.zeros(2, 2)
+
+#     if intrinsic_scatter == 'none':
+#         if np.all(cov == 0):
+#             raise ValueError("`intrinsic_scatter` should not be 'none' "
+#                              "if `cov` is not provided or all zero.")
+#         incl, inter, x0, logsx = params
+#         scatter = 0.0
+#     elif intrinsic_scatter in ['vert', 'perp']:
+#         incl, inter, logs, x0, logsx = params
+#         scatter = 10**logs
+#     else:
+#         raise ValueError("`intrinsic_scatter` should be 'none', "
+#                          "'vert' or 'perp'.")
+#     slope = np.tan(incl)
+#     y0 = slope * x0 + inter
+#     xwidth = 10**logsx
+#     normarr = np.array([[1.0, slope], [slope, slope**2]])
+#     cov_model = normarr * xwidth**2
+#     if intrinsic_scatter == 'vert':
+#         cov_model[1, 1] += scatter**2
+#     else:
+#         normarr = np.array([[slope**2, -slope], [-slope, 1.0]])
+#         cov_model += normarr * scatter**2 / (1 + slope**2)
+#     cov_whole = cov + cov_model.reshape(1, 2, 2)
+#     lnlike = np.sum(gaussNd_pdf(np.array(data),
+#                                 mean=np.array([x0, y0]),
+#                                 cov_matrix=cov_whole,
+#                                 return_log=True))
 #     if bounds is None:
-#         return lnpost
+#         return lnlike + lnpr
 
 #     from scipy.integrate import dblquad
 
 #     xmin, xmax, ymin, ymax = bounds
-#     # check data in bounds
 
-#     def integrand(y, x, cov):
-#         lnpost = lnpost_func(params, data=np.array([[x, y]]),
-#                              cov=cov, **kwargs)
-#         return np.exp(lnpost)
+#     def integrand(y, x, cov_matrix):
+#         return gaussNd_pdf(np.array((x, y)),
+#                            mean=np.array([x0, y0]),
+#                            cov_matrix=cov_matrix)
 
 #     npoint = data.shape[0]
-#     if cov.size == 4:
-#         return lnpost - npoint * np.log(dblquad(integrand,
-#                                                 xmin, xmax,
-#                                                 ymin, ymax,
-#                                                 args=(cov, ))[0])
+#     if cov_whole.shape[0] == 1 or force_homoscedastic:
+#         cov_whole = np.median(cov_whole, axis=0)
+#         norm_factor = dblquad(integrand, xmin, xmax, ymin, ymax,
+#                               args=(cov_whole, ))[0]
+#         lnlike -= npoint * np.log(norm_factor)
+#         return lnpr + lnlike
 #     else:
 #         for ipoint in range(npoint):
-#             lnpost -= np.log(dblquad(integrand,
-#                                      xmin, xmax, ymin, ymax,
-#                                      args=(cov[ipoint, :, :], ))[0])
-#         return lnpost
+#             norm_factor = dblquad(integrand, xmin, xmax, ymin, ymax,
+#                                   args=(cov_whole[ipoint, :, :], ))[0]
+#             lnlike -= np.log(norm_factor)
+#         return lnpr + lnlike
+
+
+def lnpost2D_censored(params, lnpost_func=None,
+                      data=None, cov=None, bounds=None,
+                      **kwargs):
+    """
+    Adapt 2D lnpost functions to account for data-censoring.
+    """
+    if lnpost_func is None:
+        raise ValueError("`lnpost_func` needed!")
+
+    lnpost = lnpost_func(params, data=data, cov=cov, **kwargs)
+
+    if bounds is None or np.isinf(lnpost):
+        return lnpost
+
+    from scipy.integrate import dblquad
+
+    xmin, xmax, ymin, ymax = bounds
+    if callable(ymin):
+        yminval = ymin(data[:, 0])
+    else:
+        yminval = np.full(data.shape[0], ymin)
+    if callable(ymax):
+        ymaxval = ymax(data[:, 0])
+    else:
+        ymaxval = np.full(data.shape[0], ymax)
+    if (((data[:, 0] < xmin) |
+         (data[:, 0] > xmax) |
+         (data[:, 1] < yminval) |
+         (data[:, 1] > ymaxval)).any()):
+        raise ValueError("Data found in censored area")
+
+    def integrand(y, x, cov):
+        lnpost = lnpost_func(params, data=np.array([[x, y]]),
+                             cov=cov, **kwargs)
+        return np.exp(lnpost)
+
+    npoint = data.shape[0]
+    if cov.size == 4:
+        integral = dblquad(integrand, xmin, xmax, ymin, ymax,
+                           args=(cov, ))[0]
+        return lnpost - npoint * np.log(integral)
+    else:
+        for ipoint in range(npoint):
+            integral = dblquad(integrand, xmin, xmax, ymin, ymax,
+                               args=(cov[ipoint, :, :], ))[0]
+            lnpost -= np.log(integral)
+        return lnpost
