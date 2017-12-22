@@ -80,6 +80,7 @@ def minimal_barplot(seq, percent=[16., 50., 84.],
     if ax is None:
         ax = plt.axes([0.02, 0.08, 0.96, 0.90])
     lw = 0.
+    ibar = -1
     for ibar in range(nlim // 2):
         lw += plt.rcParams['lines.linewidth']
         ax.hlines(pos, percentiles[:, ibar], percentiles[:, -ibar-1],
@@ -104,6 +105,7 @@ def minimal_barplot(seq, percent=[16., 50., 84.],
                    labelleft='off', labeltop='off', labelright='off')
     for side in ['top', 'left', 'right']:
         ax.spines[side].set_visible(False)
+    ax.xaxis.set_ticks_position('bottom')
     ax.spines['bottom'].set_smart_bounds(True)
 
     return ax
