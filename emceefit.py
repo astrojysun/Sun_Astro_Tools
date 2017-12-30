@@ -12,9 +12,8 @@ from .stats import gaussNd_pdf
 
 
 def modelfit_emcee(lnpost, guess, skip_minimize=False,
-                   threads=1, nwalkers=20, dwalker=1e-3,
-                   nstep=1000, ndiscard=100, verbose=False,
-                   **kwargs):
+                   threads=1, nwalkers=20, dwalker=1e-3, nstep=1000,
+                   verbose=True, ninfo=100, **kwargs):
 
     """
     Interface for MCMC model fitting.
@@ -36,19 +35,34 @@ def modelfit_emcee(lnpost, guess, skip_minimize=False,
     else:
         start = guess
 
-    # run MCMC
+    # initialize MCMC sampler
     sampler = EnsembleSampler(nwalkers, nparam, lnpost,
                               kwargs=kwargs, threads=threads)
     pos = [start + dwalker * np.random.randn(nparam)
            for i in range(nwalkers)]
-    sampler.run_mcmc(pos, ndiscard, storechain=False)
     if verbose:
-        print("First {} steps finished and discarded."
-              "".format(ndiscard))
-    sampler.run_mcmc(pos, nstep)
+        print("MCMC sampler initialized.")
+
+    # run MCMC
+    count = ninfo
+    while count < nstep:
+        sampler.run_mcmc(pos, ninfo)
+        if verbose:
+            summary = np.percentile(sampler.chain.reshape((-1,
+                                                           nparam)),
+                                    [16, 50, 84], axis=0)
+            print("Summary for the {} - {} steps:"
+                  "".format(count-ninfo, count))
+            print(summary)
+        count += ninfo
+
+    sampler.run_mcmc(pos, nstep-count+ninfo)
     if verbose:
-        print("{} steps of MCMC sampling finished."
-              "".format(nstep))
+        summary = np.percentile(sampler.chain.reshape((-1, nparam)),
+                                [16, 50, 84], axis=0)
+        print("Summary for all {} steps:".format(nstep))
+        print(summary)
+
     return sampler.chain.reshape((-1, nparam))
 
 
@@ -144,80 +158,6 @@ def lnpost_gauss2d(params, data=None, cov=None,
                                 cov_matrix=cov_whole,
                                 return_log=True))
     return lnpr + lnlike
-
-
-# def lnpost_line_censored(params, data=None, cov=None,
-#                          intrinsic_scatter='none',
-#                          lnprior=None, priorargs=(),
-#                          bounds=None, force_homoscedastic=True):
-#     """
-#     Natural logarithm of the posterior probability of a line model,
-#     with the presence of data censoring.
-#     """
-#     if lnprior is None:
-#         lnprior = lnprior_flat
-#     lnpr = lnprior(params, *priorargs)
-#     if not np.isfinite(lnpr):
-#         return -np.inf
-
-#     if data is None:
-#         raise ValueError("Data needed!")
-
-#     if cov is None:
-#         cov = np.zeros(2, 2)
-
-#     if intrinsic_scatter == 'none':
-#         if np.all(cov == 0):
-#             raise ValueError("`intrinsic_scatter` should not be 'none' "
-#                              "if `cov` is not provided or all zero.")
-#         incl, inter, x0, logsx = params
-#         scatter = 0.0
-#     elif intrinsic_scatter in ['vert', 'perp']:
-#         incl, inter, logs, x0, logsx = params
-#         scatter = 10**logs
-#     else:
-#         raise ValueError("`intrinsic_scatter` should be 'none', "
-#                          "'vert' or 'perp'.")
-#     slope = np.tan(incl)
-#     y0 = slope * x0 + inter
-#     xwidth = 10**logsx
-#     normarr = np.array([[1.0, slope], [slope, slope**2]])
-#     cov_model = normarr * xwidth**2
-#     if intrinsic_scatter == 'vert':
-#         cov_model[1, 1] += scatter**2
-#     else:
-#         normarr = np.array([[slope**2, -slope], [-slope, 1.0]])
-#         cov_model += normarr * scatter**2 / (1 + slope**2)
-#     cov_whole = cov + cov_model.reshape(1, 2, 2)
-#     lnlike = np.sum(gaussNd_pdf(np.array(data),
-#                                 mean=np.array([x0, y0]),
-#                                 cov_matrix=cov_whole,
-#                                 return_log=True))
-#     if bounds is None:
-#         return lnlike + lnpr
-
-#     from scipy.integrate import dblquad
-
-#     xmin, xmax, ymin, ymax = bounds
-
-#     def integrand(y, x, cov_matrix):
-#         return gaussNd_pdf(np.array((x, y)),
-#                            mean=np.array([x0, y0]),
-#                            cov_matrix=cov_matrix)
-
-#     npoint = data.shape[0]
-#     if cov_whole.shape[0] == 1 or force_homoscedastic:
-#         cov_whole = np.median(cov_whole, axis=0)
-#         norm_factor = dblquad(integrand, xmin, xmax, ymin, ymax,
-#                               args=(cov_whole, ))[0]
-#         lnlike -= npoint * np.log(norm_factor)
-#         return lnpr + lnlike
-#     else:
-#         for ipoint in range(npoint):
-#             norm_factor = dblquad(integrand, xmin, xmax, ymin, ymax,
-#                                   args=(cov_whole[ipoint, :, :], ))[0]
-#             lnlike -= np.log(norm_factor)
-#         return lnpr + lnlike
 
 
 def lnpost2D_censored(params, lnpost_func=None,

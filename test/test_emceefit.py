@@ -38,7 +38,7 @@ def test_lnpost_line():
     param_bounds = np.array([[-np.pi*0.4, np.pi*0.4],
                              [-5, 5], [-1, 1]])
     samples = modelfit_emcee(lnpost_line, guess,
-                             ndiscard=1000, nstep=5000,
+                             ninfo=100, nstep=5000,
                              data=data, cov=cov,
                              priorargs=(param_bounds, ),
                              intrinsic_scatter='vert')
@@ -94,7 +94,7 @@ def test_lnpost_gauss2d():
                              [-1.0, 1.0],
                              [0.0, np.pi/2]])
     samples = modelfit_emcee(lnpost_gauss2d, guess,
-                             ndiscard=1000, nstep=5000,
+                             ninfo=100, nstep=5000,
                              data=data, cov=cov,
                              priorargs=(param_bounds, ))
     samples[:, 2] = 10**samples[:, 2]
@@ -113,68 +113,6 @@ def test_lnpost_gauss2d():
     plt.close()
 
 
-# def test_lnpost_line_censored():
-#     """
-#     Sanity check for the lnpost_line_censored model.
-#     """
-#     # generate fake data
-#     npoints = 5000
-#     cov = np.array([[0.09, -0.03], [-0.03, 0.09]])
-#     x0 = 0.0
-#     xwidth = 3.0
-#     slope = np.tan(np.pi/4)
-#     inter = 1.0
-#     scatter = 1.
-#     xmin = -12
-#     xmax = 20
-#     ymin = lambda x: np.array(x) - 9
-#     ymax = lambda x: 2 * np.array(x) + 3
-#     x = np.random.randn(npoints) * xwidth + x0
-#     y = slope * x + inter + np.random.randn(npoints) * scatter
-#     data = (np.vstack((x, y)).T +
-#             np.random.multivariate_normal([0, 0], cov, npoints))
-#     censored_data = data[data[:, 1] < ymax(data[:, 0]), :]
-
-#     # visualize data
-#     mpl_setup('half')
-#     plt.plot(censored_data[:, 0], censored_data[:, 1], 'ko')
-#     plt.plot([xmin, xmax], [ymin(xmin), ymin(xmax)], color='r')
-#     plt.plot([xmin, xmax], [ymax(xmin), ymax(xmax)], color='r')
-#     plt.vlines([xmin, xmax], [ymin(xmin), ymin(xmax)],
-#                [ymax(xmin), ymax(xmax)], colors='r')
-#     plt.show()
-#     plt.close()
-
-#     # MCMC fit
-#     guess = [np.arctan(slope), inter, np.log10(scatter),
-#              x0, np.log10(xwidth)]
-#     param_bounds = np.array([[-np.pi*0.4, np.pi*0.4],
-#                              [-5, 5],
-#                              [-1, 1],
-#                              [-10, 10],
-#                              [-1, 1]])
-#     samples = modelfit_emcee(lnpost_line_censored, guess,
-#                              skip_minimize=True,
-#                              ndiscard=1000, nstep=5000,
-#                              data=censored_data, cov=cov,
-#                              priorargs=(param_bounds, ),
-#                              bounds=(xmin, xmax, ymin, ymax),
-#                              intrinsic_scatter='vert')
-#     samples[:, 0] = np.tan(samples[:, 0])
-#     samples[:, 2] = 10**(samples[:, 2])
-#     samples[:, 4] = 10**(samples[:, 4])
-
-#     # visualize MCMC result
-#     labels = (r"$\beta$", r"$A$", r"$\sigma$",
-#               r"$x_0$", r"$\sigma_x$")
-#     nparam = len(labels)
-#     fig, axes = plt.subplots(nparam, nparam, figsize=(6, 6))
-#     fig = easy_corner(samples, fig=fig, labels=labels,
-#                       truths=(slope, inter, scatter, x0, xwidth))
-#     plt.show()
-#     plt.close()
-
-
 def test_lnpost_line_censored():
     """
     Sanity check for `lnpost2D_censored`.
@@ -186,7 +124,7 @@ def test_lnpost_line_censored():
     xwidth = 4.0
     slope = np.tan(np.pi/4)
     inter = 1.0
-    scatter = 1.
+    scatter = 1.0
     x = np.random.rand(npoints) * 2 * xwidth - xwidth + x0
     y = slope * x + inter + np.random.randn(npoints) * scatter
     data = (np.vstack((x, y)).T +
@@ -194,10 +132,12 @@ def test_lnpost_line_censored():
 
     # apply data censoring
     xmin = -12
-    xmax = 20
+    xmax = 15
     ymin = lambda x: np.array(x) - 9
     ymax = lambda x: 2 * np.array(x) + 3
     censored_data = data[data[:, 1] < ymax(data[:, 0]), :]
+    xmin = np.min(censored_data[:, 0])
+    xmax = np.max(censored_data[:, 0])
 
     # visualize data
     mpl_setup('half')
@@ -210,11 +150,12 @@ def test_lnpost_line_censored():
     plt.close()
 
     # MCMC fit
-    guess = [0.0, np.mean(censored_data[:, 1]), 0.0]
+    guess = [1.0, 1.2, 0.3]
     param_bounds = np.array([[-np.pi*0.4, np.pi*0.4],
                              [-5, 5], [-1, 1]])
     samples = modelfit_emcee(lnpost2D_censored, guess,
-                             ndiscard=1000, nstep=5000,
+                             skip_minimize=True, nstep=5000,
+                             verbose=True, ninfo=100,
                              lnpost_func=lnpost_line,
                              bounds=(xmin, xmax, ymin, ymax),
                              data=censored_data, cov=cov,
@@ -222,13 +163,15 @@ def test_lnpost_line_censored():
                              intrinsic_scatter='vert')
     samples[:, 0] = np.tan(samples[:, 0])
     samples[:, 2] = 10**(samples[:, 2])
+    np.savetxt('data.txt', samples)
 
     # visualize MCMC result
     labels = (r"$\beta$", r"$A$", r"$\sigma$")
     nparam = len(labels)
     fig, axes = plt.subplots(nparam, nparam, figsize=(6, 6))
-    fig = easy_corner(samples,
+    fig = easy_corner(samples[1000:, :],
                       truths=(slope, inter, scatter),
                       fig=fig, labels=labels)
+    # plt.savefig('mcmc.png', bbox_inches='tight')
     plt.show()
     plt.close()
