@@ -46,24 +46,28 @@ def modelfit_emcee(lnpost, guess, skip_minimize=False,
     # run MCMC
     count = ninfo
     while count < nstep:
-        sampler.run_mcmc(pos, ninfo)
+        if count == ninfo:
+            pos0 = pos
+        else:
+            pos0 = None
+        sampler.run_mcmc(pos0, ninfo)
         if verbose:
-            summary = np.percentile(sampler.chain.reshape((-1,
-                                                           nparam)),
+            laststeps = sampler.chain[:, -ninfo:, :]
+            summary = np.percentile(laststeps.reshape(-1, nparam),
                                     [16, 50, 84], axis=0)
             print("Summary for the {} - {} steps:"
                   "".format(count-ninfo, count))
             print(summary)
         count += ninfo
 
-    sampler.run_mcmc(pos, nstep-count+ninfo)
+    sampler.run_mcmc(None, nstep-count+ninfo)
     if verbose:
-        summary = np.percentile(sampler.chain.reshape((-1, nparam)),
+        summary = np.percentile(sampler.flatchain,
                                 [16, 50, 84], axis=0)
         print("Summary for all {} steps:".format(nstep))
         print(summary)
 
-    return sampler.chain.reshape((-1, nparam))
+    return sampler.flatchain
 
 
 # --------------------------------------------------------------------
