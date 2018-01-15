@@ -24,7 +24,7 @@ def modelfit_emcee(lnpost, guess, skip_minimize=False,
     # input parameter check
     if not np.isfinite(lnpost(guess, **kwargs)):
         raise ValueError("Zero posterior probability for `guess`!")
-    nparam = len(guess)
+    nparam = np.atleast_1d(guess).size
 
     # find maximum posterior solution
     if not skip_minimize:
@@ -44,23 +44,22 @@ def modelfit_emcee(lnpost, guess, skip_minimize=False,
         print("MCMC sampler initialized.")
 
     # run MCMC
-    count = ninfo
-    while count < nstep:
-        if count == ninfo:
-            pos0 = pos
+    count = 0
+    while (count + ninfo) <= nstep:
+        if count == 0:
+            sampler.run_mcmc(pos, ninfo)
         else:
-            pos0 = None
-        sampler.run_mcmc(pos0, ninfo)
+            sampler.run_mcmc(None, ninfo)
+        count += ninfo
         if verbose:
             laststeps = sampler.chain[:, -ninfo:, :]
             summary = np.percentile(laststeps.reshape(-1, nparam),
                                     [16, 50, 84], axis=0)
             print("Summary for the {} - {} steps:"
-                  "".format(count-ninfo, count))
+                  "".format(count-ninfo+1, count))
             print(summary)
-        count += ninfo
-
-    sampler.run_mcmc(None, nstep-count+ninfo)
+    if count < nstep:
+        sampler.run_mcmc(None, nstep-count)
     if verbose:
         summary = np.percentile(sampler.flatchain,
                                 [16, 50, 84], axis=0)
