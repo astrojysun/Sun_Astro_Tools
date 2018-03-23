@@ -19,7 +19,7 @@ def deproject(params, wcs_cel, naxis, return_xymap=False):
     i_deg = params['INCL_DEG'].item()
     x0_deg = params['RA_DEG'].item()
     y0_deg = params['DEC_DEG'].item()
-    dist_mpc = params['EDD_DIST_MPC'].item()
+    dist_mpc = params['DIST_MPC'].item()
 
     # create ra and dec grids
     rgrid = np.arange(naxis[0])
