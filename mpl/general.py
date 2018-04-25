@@ -16,22 +16,22 @@ def mpl_setup(figtype='paper-1/2', aspect=0.8,
     figtype : {'paper-1/1', 'paper-1/2', 'paper-1/3', 'talk', float}
         This parameter specifies the type and width of the figure(s):
             * 'paper-1/1': figure width = full textwidth (7.1 inch)
-                           (serif font & normal lw, ms, fs)
+                           (normal lw, ms, fs)
             * 'paper-1/2': figure width = 1/2 textwidth
-                           (serif font & normal lw, ms, fs)
+                           (normal lw, ms, fs)
             * 'paper-1/3': figure width = 1/3 textwidth
-                           (serif font & normal lw, ms, fs)
-            * 'talk': figure width = 3.0 inches
-                      (sans serif font & larger lw, ms, fs)
+                           (normal lw, ms, fs)
+            * 'talk': figure height = 4.0 inches
+                      (larger lw, ms, fs)
             * float: specifying figure width (in inches)
-                     (sans serif font & normal lw, ms, fs)
+                     (normal lw, ms, fs)
     aspect : float, optional
         Aspect ratio (height/width) of a figure.
         Default is 0.8.
     lw : float, optional
-        Line width (in points). Default is 1 (2 for figtype='talk').
+        Line width (in points). Default is 1 (1.5 for figtype='talk').
     ms : float, optional
-        Marker size (in points). Default is 1 (2 for figtype='talk').
+        Marker size (in points). Default is 1 (1.5 for figtype='talk').
     fs : float, optional
         Font size (in points). Default is 11 (18 for figtype='talk').
     style : string, optional
@@ -46,14 +46,15 @@ def mpl_setup(figtype='paper-1/2', aspect=0.8,
 
     # figure
     textwidth = 7.1  # inches
+    slideheight = 4.0  # inches
     if figtype == 'paper-1/1':
-        fw = 0.95 * textwidth
+        fw = 0.98 * textwidth
     elif figtype == 'paper-1/2':
-        fw = 0.45 * textwidth
+        fw = 0.48 * textwidth
     elif figtype == 'paper-1/3':
-        fw = 0.30 * textwidth
+        fw = 0.31 * textwidth
     elif figtype == 'talk':
-        fw = 3.0
+        fw = slideheight / aspect
     else:
         fw = figtype
     plt.rcParams['figure.figsize'] = (fw, fw*aspect)
@@ -62,9 +63,9 @@ def mpl_setup(figtype='paper-1/2', aspect=0.8,
     # default sizes
     if figtype == 'talk':
         if lw is None:
-            lw = 2.0
+            lw = 1.5
         if ms is None:
-            ms = 2.0
+            ms = 1.5
         if fs is None:
             fs = 18.0
     else:
@@ -77,19 +78,28 @@ def mpl_setup(figtype='paper-1/2', aspect=0.8,
 
     # font
     plt.rcParams['text.usetex'] = True
-    plt.rcParams['font.sans-serif'] = ['Helvetica', 'Arial',
-                                       'DejaVu Sans', 'sans-serif']
+    plt.rcParams['font.family'] = 'serif'
     plt.rcParams['font.serif'] = ['Times', 'Times New Roman',
                                   'DejaVu Serif', 'serif']
+    plt.rcParams['font.sans-serif'] = ['Helvetica', 'Arial',
+                                       'DejaVu Sans', 'sans-serif']
     plt.rcParams['font.monospace'] = ['Terminal', 'monospace']
-    if figtype in ['paper-1/1', 'paper-1/2', 'paper-1/3']:
-        plt.rcParams['font.family'] = 'serif'
-    else:
-        plt.rcParams['font.family'] = 'sans-serif'
 
-    # image
-    plt.rcParams['image.cmap'] = 'gray'
-    plt.rcParams['image.interpolation'] = 'none'
+    # font weight 
+    if figtype == 'talk':
+        plt.rcParams['font.weight'] = 'bold'
+        plt.rcParams['axes.labelweight'] = 'bold'
+        plt.rcParams['axes.titleweight'] = 'bold'
+        plt.rcParams['figure.titleweight'] = 'bold'
+
+    # fontsize
+    plt.rcParams['font.size'] = fs
+    plt.rcParams['xtick.labelsize'] = 'small'
+    plt.rcParams['ytick.labelsize'] = 'small'
+    plt.rcParams['legend.fontsize'] = 'medium'
+    plt.rcParams['axes.labelsize'] = 'large'
+    plt.rcParams['axes.titlesize'] = 'large'
+    plt.rcParams['figure.titlesize'] = 'large'
 
     # linewidth
     for key in ['lines.linewidth', 'axes.linewidth',
@@ -104,13 +114,6 @@ def mpl_setup(figtype='paper-1/2', aspect=0.8,
 
     # markersize
     plt.rcParams['lines.markersize'] = ms
-
-    # fontsize
-    plt.rcParams['font.size'] = fs
-    plt.rcParams['axes.labelsize'] = 'small'
-    for key in ['axes.titlesize', 'legend.fontsize',
-                'figure.titlesize']:
-        plt.rcParams[key] = 'medium'
 
     # axes
     plt.rcParams['xtick.top'] = True
@@ -134,6 +137,10 @@ def mpl_setup(figtype='paper-1/2', aspect=0.8,
 
     # hatch
     plt.rcParams['hatch.color'] = 'gray'
+
+    # image
+    plt.rcParams['image.cmap'] = 'gray'
+    plt.rcParams['image.interpolation'] = 'none'
 
     for key in rcParams:
         plt.rcParams[key] = rcParams[key]
