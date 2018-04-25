@@ -4,7 +4,8 @@ from __future__ import (division, print_function, absolute_import,
 import matplotlib.pyplot as plt
 
 
-def mpl_setup(figwidth='half', aspect=0.8, lw=1.0, ms=1.0, fs=11.0,
+def mpl_setup(figtype='paper-1/2', aspect=0.8,
+              lw=None, ms=None, fs=None,
               style='seaborn-paper', rcParams={}):
 
     """
@@ -12,22 +13,27 @@ def mpl_setup(figwidth='half', aspect=0.8, lw=1.0, ms=1.0, fs=11.0,
 
     Parameters
     ----------
-    figwidth : {'full', 'half', 'onethird', float}
-        This parameter specifies the width of a figure:
-            * 'full': suitable for figures spanning the full width of
-                      a letter size page.
-            * 'half': 1/2 the width of a letter size page.
-            * 'onethird': 1/3 the width of a letter size page.
-            * float: absolute width (in inches).
+    figtype : {'paper-1/1', 'paper-1/2', 'paper-1/3', 'talk', float}
+        This parameter specifies the type and width of the figure(s):
+            * 'paper-1/1': figure width = full textwidth (7.1 inch)
+                           (serif font & normal lw, ms, fs)
+            * 'paper-1/2': figure width = 1/2 textwidth
+                           (serif font & normal lw, ms, fs)
+            * 'paper-1/3': figure width = 1/3 textwidth
+                           (serif font & normal lw, ms, fs)
+            * 'talk': figure width = 3.0 inches
+                      (sans serif font & larger lw, ms, fs)
+            * float: specifying figure width (in inches)
+                     (sans serif font & normal lw, ms, fs)
     aspect : float, optional
         Aspect ratio (height/width) of a figure.
         Default is 0.8.
     lw : float, optional
-        Line width (in points). Default is 1.
+        Line width (in points). Default is 1 (2 for figtype='talk').
     ms : float, optional
-        Marker size (in points). Default is 1.
+        Marker size (in points). Default is 1 (2 for figtype='talk').
     fs : float, optional
-        Font size (in points). Default is 11.
+        Font size (in points). Default is 11 (18 for figtype='talk').
     style : string, optional
         Style name to be passed to `~matplotlib.pyplot.style.use`.
         Default is 'seaborn-paper'.
@@ -39,17 +45,47 @@ def mpl_setup(figwidth='half', aspect=0.8, lw=1.0, ms=1.0, fs=11.0,
     plt.style.use(style)
 
     # figure
-    letter_page_size = (8.5, 11.0)  # in inches
-    if figwidth == 'full':
-        fw = 0.84 * letter_page_size[0]
-    elif figwidth == 'half':
-        fw = 0.40 * letter_page_size[0]
-    elif figwidth == 'onethird':
-        fw = 0.27 * letter_page_size[0]
+    textwidth = 7.1  # inches
+    if figtype == 'paper-1/1':
+        fw = 0.95 * textwidth
+    elif figtype == 'paper-1/2':
+        fw = 0.45 * textwidth
+    elif figtype == 'paper-1/3':
+        fw = 0.30 * textwidth
+    elif figtype == 'talk':
+        fw = 3.0
     else:
-        fw = figwidth
+        fw = figtype
     plt.rcParams['figure.figsize'] = (fw, fw*aspect)
     plt.rcParams['figure.dpi'] = 200
+
+    # default sizes
+    if figtype == 'talk':
+        if lw is None:
+            lw = 2.0
+        if ms is None:
+            ms = 2.0
+        if fs is None:
+            fs = 18.0
+    else:
+        if lw is None:
+            lw = 1.0
+        if ms is None:
+            ms = 1.0
+        if fs is None:
+            fs = 11.0
+
+    # font
+    plt.rcParams['text.usetex'] = True
+    plt.rcParams['font.sans-serif'] = ['Helvetica', 'Arial',
+                                       'DejaVu Sans', 'sans-serif']
+    plt.rcParams['font.serif'] = ['Times', 'Times New Roman',
+                                  'DejaVu Serif', 'serif']
+    plt.rcParams['font.monospace'] = ['Terminal', 'monospace']
+    if figtype in ['paper-1/1', 'paper-1/2', 'paper-1/3']:
+        plt.rcParams['font.family'] = 'serif'
+    else:
+        plt.rcParams['font.family'] = 'sans-serif'
 
     # image
     plt.rcParams['image.cmap'] = 'gray'
@@ -75,12 +111,6 @@ def mpl_setup(figwidth='half', aspect=0.8, lw=1.0, ms=1.0, fs=11.0,
     for key in ['axes.titlesize', 'legend.fontsize',
                 'figure.titlesize']:
         plt.rcParams[key] = 'medium'
-
-    # font
-    plt.rcParams['text.usetex'] = True
-    plt.rcParams['font.family'] = 'serif'
-    plt.rcParams['font.serif'] = 'Times'
-    plt.rcParams['font.monospace'] = 'Terminal'
 
     # axes
     plt.rcParams['xtick.top'] = True
