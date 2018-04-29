@@ -4,6 +4,39 @@ from __future__ import (division, print_function, absolute_import,
 import numpy as np
 
 
+def running_percentile(x, y, xbins, q):
+    """
+    Compute the qth percentile of y for all data points in each x-bin.
+
+    Parameters
+    ----------
+    x : array_like
+        x values of all data points
+    y : array_like
+        y values of all data points
+    xbins : array_like
+        Bin edges, including the rightmost edge
+    q : float in range of [0,100] (or sequence of floats)
+        Percentile to compute, to be passed along to `np.percentile`
+
+    Returns
+    -------
+    percentiles : ndarray
+        0th axis corresponds to the percentiles,
+        1st axis corresponds to the bins.
+    """
+    nbin = len(xbins) - 1
+    percentiles = np.full([len(q), nbin], np.nan)
+    for ibin in range(nbin):
+        mask = ((x >= xbins[ibin]) & (x < xbins[ibin+1])
+                & np.isfinite(y))
+        if mask.sum() == 0:
+            continue
+        yinbin = y[mask]
+        percentiles[:, ibin] = np.percentile(yinbin, q)
+    return percentiles
+
+
 def gaussNd_pdf(x, norm=1., mean=0., cov_matrix=None,
                 return_log=False):
     """
