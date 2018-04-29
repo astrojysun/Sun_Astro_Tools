@@ -26,7 +26,7 @@ def running_percentile(x, y, xbins, q):
         1st axis corresponds to the bins.
     """
     nbin = len(xbins) - 1
-    percentiles = np.full([len(q), nbin], np.nan)
+    percentiles = np.full([np.atleast_1d(q).size, nbin], np.nan)
     for ibin in range(nbin):
         mask = ((x >= xbins[ibin]) & (x < xbins[ibin+1])
                 & np.isfinite(y))
