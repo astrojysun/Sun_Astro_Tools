@@ -110,7 +110,7 @@ def mpl_setup(figtype='paper-1/2', aspect=0.8,
         plt.rcParams[key] = lw
 
     # errorbar cap size
-    plt.rcParams['errorbar.capsize'] = 2.0
+    plt.rcParams['errorbar.capsize'] = 2 * lw
 
     # markersize
     plt.rcParams['lines.markersize'] = ms
