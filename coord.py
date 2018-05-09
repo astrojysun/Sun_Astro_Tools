@@ -7,8 +7,8 @@ import numpy as np
 def deproject(params, wcs_cel, naxis, return_xymap=False):
 
     """
-    Compute deprojected radii (in kpc) and projected angle (in deg)
-    based on center coordinates, inclination, P.A. and distance.
+    Compute deprojected radii and projected angle (in deg)
+    based on center coordinates, inclination, and position angle.
 
     Transplanted (with minor modification) by J. Sun from the IDL
     function `deproject`, which is included in the `cpropstoo` package
@@ -19,7 +19,6 @@ def deproject(params, wcs_cel, naxis, return_xymap=False):
     i_deg = params['INCL_DEG'].item()
     x0_deg = params['RA_DEG'].item()
     y0_deg = params['DEC_DEG'].item()
-    dist_mpc = params['DIST_MPC'].item()
 
     # create ra and dec grids
     rgrid = np.arange(naxis[0])
@@ -43,12 +42,11 @@ def deproject(params, wcs_cel, naxis, return_xymap=False):
 
     # make map of deprojected distance from the center
     rmap_deg = np.sqrt(deprojdx_deg**2 + deprojdy_deg**2)
-    rmap_kpc = np.deg2rad(rmap_deg) * dist_mpc*1e3
 
     # make map of angle w.r.t. position angle
     amap_deg = np.rad2deg(np.arctan2(deprojdy_deg, deprojdx_deg))
 
     if return_xymap:
-        return rmap_kpc, amap_deg, dxmap_deg, dymap_deg
+        return rmap_deg, amap_deg, dxmap_deg, dymap_deg
     else:
-        return rmap_kpc, amap_deg
+        return rmap_deg, amap_deg
