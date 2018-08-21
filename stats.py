@@ -28,8 +28,8 @@ def running_percentile(x, y, xbins, q):
     nbin = len(xbins) - 1
     percentiles = np.full([np.atleast_1d(q).size, nbin], np.nan)
     for ibin in range(nbin):
-        mask = ((x >= xbins[ibin]) & (x < xbins[ibin+1])
-                & np.isfinite(y))
+        mask = ((x >= xbins[ibin]) & (x < xbins[ibin + 1]) &
+                np.isfinite(y))
         if mask.sum() == 0:
             continue
         yinbin = y[mask]
@@ -83,10 +83,10 @@ def gaussNd_pdf(x, norm=1., mean=0., cov_matrix=None,
     ndim = x.shape[-1]
     if not return_log:
         return (np.exp(-0.5 * distsq) /
-                np.sqrt((2*np.pi)**ndim *
+                np.sqrt((2 * np.pi) ** ndim *
                         np.linalg.det(cov_matrix)) *
                 norm)
     else:
-        return (-0.5 * (distsq + np.log(2*np.pi)*ndim +
+        return (-0.5 * (distsq + np.log(2 * np.pi) * ndim +
                         np.log(np.linalg.det(cov_matrix))) +
                 np.log(norm))
