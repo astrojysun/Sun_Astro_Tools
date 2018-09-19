@@ -25,8 +25,7 @@ def clean_header(hdr, remove_keys=[], keep_keys=[]):
                     'OBS-RA', 'OBS-DEC', 'MJD-OBS', 'DATE-OBS']
     newhdr = hdr.copy()
     for key in remove_keys:
-        if key in newhdr:
-            newhdr.remove(key)
+        newhdr.remove(key, ignore_missing=True, remove_all=True)
     newhdr = WCS(newhdr).to_header()
     newhdr.remove('WCSAXES')
     for key in keep_keys:
