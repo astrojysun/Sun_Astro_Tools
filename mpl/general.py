@@ -142,7 +142,6 @@ def mpl_setup(figtype='paper-1/2', aspect=0.8,
     plt.rcParams['image.cmap'] = 'gray'
     plt.rcParams['image.interpolation'] = 'none'
 
-    for key in rcParams:
-        plt.rcParams[key] = rcParams[key]
+    plt.rcParams.update(rcParams)
 
     return
