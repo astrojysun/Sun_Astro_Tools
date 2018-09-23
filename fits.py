@@ -42,19 +42,17 @@ def clean_header(hdr, remove_keys=[], keep_keys=[]):
     return newhdr
 
 
-def convolve_image(infile, newres, hdu=0, res_tol=0.0, min_coverage=0.8,
-                   writefile='', append_raw=False, verbose=False):
+def convolve_image_hdu(inhdu, newres, res_tol=0.0, min_coverage=0.8,
+                       append_raw=False, verbose=False):
     """
     Convolve a FITS 2D image to a specified resolution.
 
     Parameters
     ----------
-    infile : string
-        Input FITS image
+    inhdu : FITS HDU object
+        Input FITS HDU
     newres : astropy Quantity object
         Target resolution to convolve to
-    hdu : int, optional
-        Index of the HDU to read in (default: 0)
     res_tol : float, optional
         Tolerance on the difference between input/output resolution
         By default, a convolution is performed on the input image
@@ -71,9 +69,6 @@ def convolve_image(infile, newres, hdu=0, res_tol=0.0, min_coverage=0.8,
         If the user would rather use the interpolation strategy in
         `astropy.convolution.convolve_fft`, set this keyword to None.
         Note that the NaN pixels will be kept as NaN.
-    writefile : string, optional
-        Name of the output FITS file. If not specified, the convolved
-        HDU / HDUList object itself will be returned.
     append_raw : bool, optional
         Whether to append the raw convolved image and weight image.
         Default is not to append.
@@ -82,8 +77,8 @@ def convolve_image(infile, newres, hdu=0, res_tol=0.0, min_coverage=0.8,
 
     Returns
     -------
-    If the keyword 'writefile' is specified, return its value,
-    otherwise return the convolved HDU or HDUList object.
+    outhdu : FITS HDUList object
+        HDUList comprise of the convolved HDU image(s)
     """
 
     if min_coverage is None:
@@ -97,6 +92,9 @@ def convolve_image(infile, newres, hdu=0, res_tol=0.0, min_coverage=0.8,
                                 boundary='fill', fill_value=0.,
                                 allow_huge=True, quiet=~verbose)
 
+    if inhdu.header['NAXIS'] != 2:
+        raise ValueError("Input HDU is not a 2D image (NAXIS != 2)")
+
     # create target beam
     newres_u = (newres * u.dimensionless_unscaled).unit
     if not newres_u.is_equivalent(u.deg):
@@ -104,10 +102,8 @@ def convolve_image(infile, newres, hdu=0, res_tol=0.0, min_coverage=0.8,
     newbeam = Beam(major=newres, minor=newres, pa=0*u.deg)
 
     # read in specified FITS HDU
-    hdul = fits.open(infile)
-    this_hdu = hdul[hdu]
-    oldimg = Projection.from_hdu(this_hdu)
-    wtarr = np.isfinite(this_hdu.data).astype('float')
+    oldimg = Projection.from_hdu(inhdu)
+    wtarr = np.isfinite(inhdu.data).astype('float')
     wtimg = Projection(wtarr, wcs=oldimg.wcs, beam=oldimg.beam)
         
     tol = [newres * (1 - res_tol), newres * (1 + res_tol)]
@@ -140,10 +136,8 @@ def convolve_image(infile, newres, hdu=0, res_tol=0.0, min_coverage=0.8,
             print("Unsuccessful convolution: ", err, sep='')
             print("Old", oldimg.beam)
             print("New", newbeam)
-            hdul.close()
             return
-    newhdr = this_hdu.header.copy(strip=True)
-    hdul.close()
+    newhdr = inhdu.header.copy(strip=True)
 
     # construct output HDUList
     newdata = newimg.hdu.data
@@ -158,22 +152,7 @@ def convolve_image(infile, newres, hdu=0, res_tol=0.0, min_coverage=0.8,
     else:
         hdul = fits.HDUList([newhdu])
 
-    if writefile:
-        if verbose:
-            if append_raw and my_append_raw:
-                print("Writing convolved HDUs to disk...")
-            else:
-                print("Writing convolved HDU to disk...")
-        hdul.writeto(writefile, overwrite=True)
-        return writefile
-    else:
-        if append_raw and my_append_raw:
-            if verbose:
-                print("No 'writefile' specified. "
-                      "Returning convolved HDUs...")
-            return hdul
-        else:
-            if verbose:
-                print("No 'writefile' specified. "
-                      "Returning convolved HDU...")
-            return newhdu
+    if verbose:
+        print("No 'writefile' specified. "
+              "Returning convolved HDU(s)...")
+    return hdul
