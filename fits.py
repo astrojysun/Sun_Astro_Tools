@@ -7,7 +7,6 @@ from astropy import units as u
 from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.convolution import convolve_fft
-from radio_beam import Beam
 from spectral_cube import Projection
 
 
@@ -42,17 +41,58 @@ def clean_header(hdr, remove_keys=[], keep_keys=[]):
     return newhdr
 
 
-def convolve_image_hdu(inhdu, newres, res_tol=0.0, min_coverage=0.8,
-                       append_raw=False, verbose=False):
+def regrid_hdu(inhdu, newhdr, keep_old_header_keys=[], **kwargs):
     """
-    Convolve a FITS 2D image to a specified resolution.
+    Regrid a FITS HDU (either 2D or 3D) according to the input header.
+
+    This is just a simple wrapper around `reproject.reproject_interp`.
 
     Parameters
     ----------
     inhdu : FITS HDU object
         Input FITS HDU
-    newres : astropy Quantity object
-        Target resolution to convolve to
+    newhdr : FITS header object
+        New header that defines the new grid
+    keep_old_header_keys : array-like, optional
+        List of keys to keep from the old header in 'inhdu'
+        Default is an empty list.
+    **kwargs
+        Keyword arguments to be passed to `reproject.reproject_interp`
+
+    Returns
+    -------
+    outhdu : FITS HDU object
+        Regridded HDU
+    """
+    from reproject import reproject_interp
+        
+    if inhdu.header['NAXIS'] < 2 or inhdu.header['NAXIS'] > 4:
+        raise ValueError("Input HDU has 'NAXIS'={}"
+                         "".format(inhdu.header['NAXIS']))
+
+    hdr = newhdr.copy()
+    for key in keep_old_header_keys:
+        hdr[key] = inhdu.header[key]
+
+    data_proj, footprint = reproject_interp(inhdu, hdr, **kwargs)
+    data_proj[~footprint.astype('?')] = np.nan
+    newhdu = inhdu.__class__(data_proj, hdr)
+    
+    return newhdu
+
+
+def convolve_image_hdu(inhdu, newbeam, res_tol=0.0, min_coverage=0.8,
+                       append_raw=False, verbose=False,
+                       suppress_error=False):
+    """
+    Convolve a FITS 2D image to a specified beam.
+
+    Parameters
+    ----------
+    inhdu : FITS HDU object
+        Input FITS HDU
+    newbeam : radio_beam.Beam object
+        Target beam to convolve to
     res_tol : float, optional
         Tolerance on the difference between input/output resolution
         By default, a convolution is performed on the input image
@@ -70,15 +110,20 @@ def convolve_image_hdu(inhdu, newres, res_tol=0.0, min_coverage=0.8,
         `astropy.convolution.convolve_fft`, set this keyword to None.
         Note that the NaN pixels will be kept as NaN.
     append_raw : bool, optional
-        Whether to append the raw convolved image and weight image.
+        Whether to append the raw convolved image and weight image
         Default is not to append.
     verbose : bool, optional
-        Whether to print the detailed processing information in terminal.
+        Whether to print the detailed processing information in terminal
+        Default is to not print.
+    suppress_error : bool, optional
+        Whether to suppress the error when convolution is unsuccessful
+        Default is to not suppress.
 
     Returns
     -------
-    outhdu : FITS HDUList object
-        HDUList comprise of the convolved HDU image(s)
+    outhdu : FITS HDU or HDUList object
+        Convolved HDU (when append_raw=False), or HDUList that
+        comprises of 3 HDUs (when append_raw=True)
     """
 
     if min_coverage is None:
@@ -95,18 +140,16 @@ def convolve_image_hdu(inhdu, newres, res_tol=0.0, min_coverage=0.8,
     if inhdu.header['NAXIS'] != 2:
         raise ValueError("Input HDU is not a 2D image (NAXIS != 2)")
 
-    # create target beam
-    newres_u = (newres * u.dimensionless_unscaled).unit
-    if not newres_u.is_equivalent(u.deg):
-        raise ValueError("`newres` must carry an angle unit")
-    newbeam = Beam(major=newres, minor=newres, pa=0*u.deg)
+    if (res_tol > 0) and (newbeam.major != newbeam.minor):
+        raise ValueError("You cannot specify a non-zero resolution "
+                         "torelance if the target beam is not round")
 
     # read in specified FITS HDU
     oldimg = Projection.from_hdu(inhdu)
     wtarr = np.isfinite(inhdu.data).astype('float')
     wtimg = Projection(wtarr, wcs=oldimg.wcs, beam=oldimg.beam)
         
-    tol = [newres * (1 - res_tol), newres * (1 + res_tol)]
+    tol = newbeam.major * np.array([1-res_tol, 1+res_tol])
     if ((tol[0] < oldimg.beam.major < tol[1]) and
         (tol[0] < oldimg.beam.minor < tol[1])):
         if verbose:
@@ -133,26 +176,29 @@ def convolve_image_hdu(inhdu, newres, res_tol=0.0, min_coverage=0.8,
                 my_append_raw = False
                 newimg = convimg
         except ValueError as err:
-            print("Unsuccessful convolution: ", err, sep='')
-            print("Old", oldimg.beam)
-            print("New", newbeam)
-            return
+            if suppress_error:
+                return
+            else:
+                raise ValueError(
+                    "Unsuccessful convolution: {}\nOld: {}\nNew: {}"
+                    "".format(err, oldimg.beam, newbeam))
     newhdr = inhdu.header.copy(strip=True)
 
     # construct output HDUList
     newdata = newimg.hdu.data
     for key in ['BMAJ', 'BMIN', 'BPA']:
         newhdr[key] = newimg.header[key]
+    newhdr.remove('WCSAXES', ignore_missing=True)
     newhdu = fits.PrimaryHDU(newdata, newhdr)
     if append_raw and my_append_raw:
         convhdu = fits.ImageHDU(convimg.hdu.data, newhdr)
         newhdr.remove('BUNIT')
         wthdu = fits.ImageHDU(wtimg.hdu.data, newhdr)
-        hdul = fits.HDUList([newhdu, convhdu, wthdu])
+        output = fits.HDUList([newhdu, convhdu, wthdu])
     else:
-        hdul = fits.HDUList([newhdu])
+        output = newhdu
 
     if verbose:
         print("No 'writefile' specified. "
-              "Returning convolved HDU(s)...")
-    return hdul
+              "Returning convolved HDU/HDUList...")
+    return output
