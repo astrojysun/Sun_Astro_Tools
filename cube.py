@@ -77,7 +77,7 @@ def convolve_cube(cube, newbeam, res_tol=0.0, min_coverage=0.8,
             print("Native resolution within tolerance - "
                   "Copying original cube...")
         my_append_raw = False
-        newcube = cube.copy()
+        newcube = cube.unmasked_copy().with_mask(cube.mask.include())
     else:
         if verbose:
             print("Convolving cube...")
