@@ -1,12 +1,10 @@
 from __future__ import (division, print_function, absolute_import,
                         unicode_literals)
 
-from functools import partial
 import numpy as np
 from astropy import units as u
 from astropy.io import fits
 from astropy.wcs import WCS
-from astropy.convolution import convolve_fft
 from spectral_cube import Projection
 
 
@@ -122,9 +120,12 @@ def convolve_image_hdu(inhdu, newbeam, res_tol=0.0, min_coverage=0.8,
     Returns
     -------
     outhdu : FITS HDU or HDUList object
-        Convolved HDU (when append_raw=False), or HDUList that
-        comprises of 3 HDUs (when append_raw=True)
+        Convolved HDU (when append_raw=False), or HDUList comprising
+        3 HDUs (when append_raw=True)
     """
+
+    from functools import partial
+    from astropy.convolution import convolve_fft
 
     if min_coverage is None:
         # Skip coverage check and preserve NaN values.
@@ -146,8 +147,6 @@ def convolve_image_hdu(inhdu, newbeam, res_tol=0.0, min_coverage=0.8,
 
     # read in specified FITS HDU
     oldimg = Projection.from_hdu(inhdu)
-    wtarr = np.isfinite(inhdu.data).astype('float')
-    wtimg = Projection(wtarr, wcs=oldimg.wcs, beam=oldimg.beam)
         
     tol = newbeam.major * np.array([1-res_tol, 1+res_tol])
     if ((tol[0] < oldimg.beam.major < tol[1]) and
@@ -166,6 +165,9 @@ def convolve_image_hdu(inhdu, newbeam, res_tol=0.0, min_coverage=0.8,
             if min_coverage is not None:
                 # divide the raw convolved image by the weight image
                 my_append_raw = True
+                wtarr = np.isfinite(inhdu.data).astype('float')
+                wtimg = Projection(wtarr,
+                                   wcs=oldimg.wcs, beam=oldimg.beam)
                 wtimg = wtimg.convolve_to(newbeam,
                                           convolve=convolve_func)
                 newimg = convimg / wtimg.hdu.data
@@ -194,11 +196,6 @@ def convolve_image_hdu(inhdu, newbeam, res_tol=0.0, min_coverage=0.8,
         convhdu = fits.ImageHDU(convimg.hdu.data, newhdr)
         newhdr.remove('BUNIT')
         wthdu = fits.ImageHDU(wtimg.hdu.data, newhdr)
-        output = fits.HDUList([newhdu, convhdu, wthdu])
+        return fits.HDUList([newhdu, convhdu, wthdu])
     else:
-        output = newhdu
-
-    if verbose:
-        print("No 'writefile' specified. "
-              "Returning convolved HDU/HDUList...")
-    return output
+        return newhdu
