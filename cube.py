@@ -406,7 +406,9 @@ def calc_channel_corr(cube, mask=None):
     Returns
     -------
     r : float
-        the Pearson correlation coefficient
+        Pearson's correlation coefficient
+    p-value : float
+        Two-tailed p-value
     """
     from scipy.stats import pearsonr
 
