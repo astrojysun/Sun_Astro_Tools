@@ -2,10 +2,9 @@ from __future__ import (division, print_function, absolute_import,
                         unicode_literals)
 
 import numpy as np
-from astropy import units as u
 from astropy.io import fits
 from astropy.wcs import WCS
-from spectral_cube import Projection
+from spectral_cube import SpectralCube, Projection
 
 
 def clean_header(hdr, remove_keys=[], keep_keys=[]):
@@ -39,11 +38,12 @@ def clean_header(hdr, remove_keys=[], keep_keys=[]):
     return newhdr
 
 
-def regrid_hdu(inhdu, newhdr, keep_old_header_keys=[], **kwargs):
+def regrid_image_hdu(inhdu, newhdr, keep_header_keys=[],
+                     **kwargs):
     """
-    Regrid a FITS HDU (either 2D or 3D) according to the input header.
+    Regrid a FITS image HDU (2D or 3D) according to a specified header.
 
-    This is just a simple wrapper around `reproject.reproject_interp`.
+    This is a simple wrapper around `~reproject.reproject_interp`.
 
     Parameters
     ----------
@@ -51,11 +51,11 @@ def regrid_hdu(inhdu, newhdr, keep_old_header_keys=[], **kwargs):
         Input FITS HDU
     newhdr : FITS header object
         New header that defines the new grid
-    keep_old_header_keys : array-like, optional
+    keep_header_keys : array-like, optional
         List of keys to keep from the old header in 'inhdu'
         Default is an empty list.
     **kwargs
-        Keyword arguments to be passed to `reproject.reproject_interp`
+        Keywords to be passed to `~reproject.reproject_interp`
 
     Returns
     -------
@@ -69,7 +69,7 @@ def regrid_hdu(inhdu, newhdr, keep_old_header_keys=[], **kwargs):
                          "".format(inhdu.header['NAXIS']))
 
     hdr = newhdr.copy()
-    for key in keep_old_header_keys:
+    for key in keep_header_keys:
         hdr[key] = inhdu.header[key]
 
     data_proj, footprint = reproject_interp(inhdu, hdr, **kwargs)
@@ -79,11 +79,12 @@ def regrid_hdu(inhdu, newhdr, keep_old_header_keys=[], **kwargs):
     return newhdu
 
 
-def convolve_image_hdu(inhdu, newbeam, res_tol=0.0, min_coverage=0.8,
-                       append_raw=False, verbose=False,
-                       suppress_error=False):
+def convolve_image_hdu(inhdu, newbeam, append_raw=False, **kwargs):
     """
-    Convolve a FITS 2D image to a specified beam.
+    Convolve a FITS image HDU (2D or 3D) to a specified beam.
+
+    This is a simple wrapper around `.cube.convolve_cube` and
+    `.cube.convolve_projection`
 
     Parameters
     ----------
@@ -91,31 +92,12 @@ def convolve_image_hdu(inhdu, newbeam, res_tol=0.0, min_coverage=0.8,
         Input FITS HDU
     newbeam : radio_beam.Beam object
         Target beam to convolve to
-    res_tol : float, optional
-        Tolerance on the difference between input/output resolution
-        By default, a convolution is performed on the input image
-        whenever its native resolution is different from (sharper than)
-        the target resolution. Use this keyword to specify a tolerance
-        on resolution, within which no convolution will be performed.
-        For example, res_tol=0.1 will allow a 10% tolerance.
-    min_coverage : float or None, optional
-        When the convolution meets NaN values or edges, the output is
-        calculated based on beam-weighted average. This keyword specifies
-        the minimum beam covering fraction of valid (np.finite) values.
-        All pixels with less beam covering fraction will be assigned NaNs.
-        Default is 80% beam covering fraction (min_coverage=0.8).
-        If the user would rather use the interpolation strategy in
-        `astropy.convolution.convolve_fft`, set this keyword to None.
-        Note that the NaN pixels will be kept as NaN.
     append_raw : bool, optional
         Whether to append the raw convolved image and weight image
         Default is not to append.
-    verbose : bool, optional
-        Whether to print the detailed processing information in terminal
-        Default is to not print.
-    suppress_error : bool, optional
-        Whether to suppress the error when convolution is unsuccessful
-        Default is to not suppress.
+    **kwargs
+        Keywords to be passed to either `.cube.convolve_cube`
+        or `.cube.convolve_projection`
 
     Returns
     -------
@@ -123,79 +105,30 @@ def convolve_image_hdu(inhdu, newbeam, res_tol=0.0, min_coverage=0.8,
         Convolved HDU (when append_raw=False), or HDUList comprising
         3 HDUs (when append_raw=True)
     """
-
-    from functools import partial
-    from astropy.convolution import convolve_fft
-
-    if min_coverage is None:
-        # Skip coverage check and preserve NaN values.
-        # This uses the default interpolation strategy
-        # implemented in 'astropy.convolution.convolve_fft'
-        convolve_func = partial(convolve_fft, preserve_nan=True)
+    naxis = inhdu.header['NAXIS']
+    if naxis < 2 or naxis >= 4:
+        raise ValueError("Cannot handle input HDU with NAXIS={}"
+                         "".format(inhdu.header['NAIXS']))
+    if naxis == 2:
+        oldimg = Projection.from_hdu(inhdu)
+        from .cube import convolve_projection as convolve
     else:
-        # Do coverage check to determine the mask on the output
-        convolve_func = partial(convolve_fft, nan_treatment='fill',
-                                boundary='fill', fill_value=0.,
-                                allow_huge=True, quiet=~verbose)
-
-    if inhdu.header['NAXIS'] != 2:
-        raise ValueError("Input HDU is not a 2D image (NAXIS != 2)")
-
-    if (res_tol > 0) and (newbeam.major != newbeam.minor):
-        raise ValueError("You cannot specify a non-zero resolution "
-                         "torelance if the target beam is not round")
-
-    # read in specified FITS HDU
-    oldimg = Projection.from_hdu(inhdu)
-        
-    tol = newbeam.major * np.array([1-res_tol, 1+res_tol])
-    if ((tol[0] < oldimg.beam.major < tol[1]) and
-        (tol[0] < oldimg.beam.minor < tol[1])):
-        if verbose:
-            print("Native resolution within tolerance - "
-                  "Copying original HDU...")
-        my_append_raw = False
-        newimg = oldimg.copy()
-    else:
-        if verbose:
-            print("Convolving HDU...")
-        try:
-            convimg = oldimg.convolve_to(newbeam,
-                                         convolve=convolve_func)
-            if min_coverage is not None:
-                # divide the raw convolved image by the weight image
-                my_append_raw = True
-                wtarr = np.isfinite(inhdu.data).astype('float')
-                wtimg = Projection(wtarr,
-                                   wcs=oldimg.wcs, beam=oldimg.beam)
-                wtimg = wtimg.convolve_to(newbeam,
-                                          convolve=convolve_func)
-                newimg = convimg / wtimg.hdu.data
-                # mask all pixels w/ weight smaller than min_coverage
-                threshold = min_coverage * u.dimensionless_unscaled
-                newimg[wtimg < threshold] = np.nan
-            else:
-                my_append_raw = False
-                newimg = convimg
-        except ValueError as err:
-            if suppress_error:
-                return
-            else:
-                raise ValueError(
-                    "Unsuccessful convolution: {}\nOld: {}\nNew: {}"
-                    "".format(err, oldimg.beam, newbeam))
+        oldimg = SpectralCube(inhdu.data, wcs=WCS(inhdu.header),
+                              header=inhdu.header)
+        from .cube import convolve_cube as convolve
+    newimg = convolve(oldimg, newbeam, append_raw=append_raw,
+                      **kwargs)
     newhdr = inhdu.header.copy(strip=True)
-
-    # construct output HDUList
-    newdata = newimg.hdu.data
-    for key in ['BMAJ', 'BMIN', 'BPA']:
-        newhdr[key] = newimg.header[key]
-    newhdr.remove('WCSAXES', ignore_missing=True)
-    newhdu = fits.PrimaryHDU(newdata, newhdr)
-    if append_raw and my_append_raw:
-        convhdu = fits.ImageHDU(convimg.hdu.data, newhdr)
-        newhdr.remove('BUNIT')
-        wthdu = fits.ImageHDU(wtimg.hdu.data, newhdr)
-        return fits.HDUList([newhdu, convhdu, wthdu])
-    else:
+    if not append_raw:
+        for key in ['BMAJ', 'BMIN', 'BPA']:
+            newhdr[key] = newimg.header[key]
+        newhdu = fits.PrimaryHDU(newimg.hdu.data, newhdr)
         return newhdu
+    else:
+        for key in ['BMAJ', 'BMIN', 'BPA']:
+            newhdr[key] = newimg[0].header[key]
+        newhdu = fits.PrimaryHDU(newimg[0].hdu.data, newhdr)
+        convhdu = fits.ImageHDU(newimg[1].hdu.data, newhdr)
+        newhdr.remove('BUNIT', ignore_missing=True)
+        wthdu = fits.ImageHDU(newimg[2].hdu.data, newhdr)
+        return fits.HDUList([newhdu, convhdu, wthdu])
