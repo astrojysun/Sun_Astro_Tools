@@ -79,7 +79,8 @@ def regrid_image_hdu(inhdu, newhdr, keep_header_keys=[],
     return newhdu
 
 
-def convolve_image_hdu(inhdu, newbeam, append_raw=False, **kwargs):
+def convolve_image_hdu(inhdu, newbeam, append_raw=False,
+                       allow_huge_operations=True, **kwargs):
     """
     Convolve a FITS image HDU (2D or 3D) to a specified beam.
 
@@ -95,6 +96,9 @@ def convolve_image_hdu(inhdu, newbeam, append_raw=False, **kwargs):
     append_raw : bool, optional
         Whether to append the raw convolved image and weight image
         Default is not to append.
+    allow_huge_operations : bool optional
+        Whether to set cube.allow_huge_operations=True
+        Default is True.
     **kwargs
         Keywords to be passed to either `.cube.convolve_cube`
         or `.cube.convolve_projection`
@@ -115,9 +119,12 @@ def convolve_image_hdu(inhdu, newbeam, append_raw=False, **kwargs):
     else:
         oldimg = SpectralCube(inhdu.data, wcs=WCS(inhdu.header),
                               header=inhdu.header)
+        oldimg.allow_huge_operations = allow_huge_operations
         from .cube import convolve_cube as convolve
     newimg = convolve(oldimg, newbeam, append_raw=append_raw,
                       **kwargs)
+    if newimg is None:
+        return
     newhdr = inhdu.header.copy(strip=True)
     if not append_raw:
         for key in ['BMAJ', 'BMIN', 'BPA']:
