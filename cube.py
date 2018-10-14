@@ -180,6 +180,7 @@ def calc_noise_in_cube(cube, masking_scheme='simple', mask=None,
                   ((cube - lolim_v) > (0 * cube.unit)))
     rms_v = cube.with_mask(mask_v).mad_std(axis=(1, 2)).quantity.value
     rms_v = generic_filter(rms_v, np.nanmedian,
+                           mode='constant', cval=np.nan,
                            size=spectral_average_nchan)
     
     # find rms noise as a function of sightline
@@ -194,13 +195,13 @@ def calc_noise_in_cube(cube, masking_scheme='simple', mask=None,
         mask_s = (((cube - uplim_s) < (0 * cube.unit)) &
                   ((cube - lolim_s) > (0 * cube.unit)))
     rms_s = cube.with_mask(mask_s).mad_std(axis=0).quantity.value
-    beamFWHM_pix = np.ceil(cube.beam.major.to(u.deg).value /
-                           np.abs(cube.wcs.celestial.wcs.cdelt.min()))
-    beamFWHM_pix = np.max([beamFWHM_pix, 3])
+    beamFWHM_pix = (cube.beam.major.to(u.deg).value /
+                    np.abs(cube.wcs.celestial.wcs.cdelt.min()))
+    beamFWHM_pix = np.max([beamFWHM_pix, 3.])
     spatial_average_npix = int(spatial_average_nbeam * beamFWHM_pix)
     rms_s = generic_filter(rms_s, np.nanmedian,
-                           size=(spatial_average_npix,
-                                 spatial_average_npix))
+                           mode='constant', cval=np.nan,
+                           size=spatial_average_npix)
 
     # create rms noise cube from the tensor product of rms_v and rms_s
     if verbose:
@@ -406,7 +407,9 @@ def calc_channel_corr(cube, mask=None):
     Returns
     -------
     r : float
-        the Pearson correlation coefficient
+        Pearson's correlation coefficient
+    p-value : float
+        Two-tailed p-value
     """
     from scipy.stats import pearsonr
 
