@@ -3,7 +3,7 @@ from __future__ import (division, print_function, absolute_import,
 
 import numpy as np
 from astropy import units as u
-from spectral_cube import SpectralCube
+from spectral_cube import SpectralCube, Projection
 
 
 def convolve_cube(cube, newbeam, res_tol=0.0, min_coverage=0.8,
@@ -14,7 +14,7 @@ def convolve_cube(cube, newbeam, res_tol=0.0, min_coverage=0.8,
 
     Parameters
     ----------
-    cube : SpectralCube object
+    cube : ~spectral_cube.SpectralCube object
         Input spectral cube
     newbeam : radio_beam.Beam object
         Target beam to convolve to
@@ -420,3 +420,113 @@ def calc_channel_corr(cube, mask=None):
 
     return pearsonr(cube.filled_data[mask],
                     cube.filled_data[np.roll(mask, 1, axis=0)])
+
+
+def convolve_projection(proj, newbeam, res_tol=0.0, min_coverage=0.8,
+                        append_raw=False, verbose=False,
+                        suppress_error=False):
+    """
+    Convolve a 2D image to a specified beam.
+
+    Very similar to `convolve_cube()` in this module, this function
+    deals with 2D images (i.e., projections) rather than 3D cubes.
+
+    Parameters
+    ----------
+    proj : ~spectral_cube.Projection object
+        Input 2D image
+    newbeam : radio_beam.Beam object
+        Target beam to convolve to
+    res_tol : float, optional
+        Tolerance on the difference between input/output resolution
+        By default, a convolution is performed on the input image
+        whenever its native resolution is different from (sharper than)
+        the target resolution. Use this keyword to specify a tolerance
+        on resolution, within which no convolution will be performed.
+        For example, res_tol=0.1 will allow a 10% tolerance.
+    min_coverage : float or None, optional
+        When the convolution meets NaN values or edges, the output is
+        calculated based on beam-weighted average. This keyword specifies
+        the minimum beam covering fraction of valid (np.finite) values.
+        All pixels with less beam covering fraction will be assigned NaNs.
+        Default is 80% beam covering fraction (min_coverage=0.8).
+        If the user would rather use the interpolation strategy in
+        `astropy.convolution.convolve_fft`, set this keyword to None.
+        Note that the NaN pixels will be kept as NaN.
+    append_raw : bool, optional
+        Whether to append the raw convolved image and weight image
+        Default is not to append.
+    verbose : bool, optional
+        Whether to print the detailed processing information in terminal
+        Default is to not print.
+    suppress_error : bool, optional
+        Whether to suppress the error when convolution is unsuccessful
+        Default is to not suppress.
+
+    Returns
+    -------
+    outproj : Projection object or tuple
+        Convolved 2D image (when append_raw=False), or a tuple
+        comprising 3 images (when append_raw=True)
+    """
+
+    from functools import partial
+    from astropy.convolution import convolve_fft
+
+    if min_coverage is None:
+        # Skip coverage check and preserve NaN values.
+        # This uses the default interpolation strategy
+        # implemented in 'astropy.convolution.convolve_fft'
+        convolve_func = partial(convolve_fft, preserve_nan=True,
+                                allow_huge=True, quiet=~verbose)
+    else:
+        # Do coverage check to determine the mask on the output
+        convolve_func = partial(convolve_fft, nan_treatment='fill',
+                                boundary='fill', fill_value=0.,
+                                allow_huge=True, quiet=~verbose)
+
+    if (res_tol > 0) and (newbeam.major != newbeam.minor):
+        raise ValueError("You cannot specify a non-zero resolution "
+                         "torelance if the target beam is not round")
+
+    tol = newbeam.major * np.array([1-res_tol, 1+res_tol])
+    if ((tol[0] < proj.beam.major < tol[1]) and
+        (tol[0] < proj.beam.minor < tol[1])):
+        if verbose:
+            print("Native resolution within tolerance - "
+                  "Copying original image...")
+        my_append_raw = False
+        newproj = proj.copy()
+    else:
+        if verbose:
+            print("Convolving image...")
+        try:
+            convproj = proj.convolve_to(newbeam,
+                                        convolve=convolve_func)
+            if min_coverage is not None:
+                # divide the raw convolved image by the weight image
+                my_append_raw = True
+                wtproj = Projection(
+                    np.isfinite(proj.data).astype('float'),
+                    wcs=proj.wcs, beam=proj.beam)
+                wtproj = wtproj.convolve_to(newbeam,
+                                            convolve=convolve_func)
+                newproj = convproj / wtproj.hdu.data
+                # mask all pixels w/ weight smaller than min_coverage
+                threshold = min_coverage * u.dimensionless_unscaled
+                newproj[wtproj < threshold] = np.nan
+            else:
+                my_append_raw = False
+                newproj = convproj
+        except ValueError as err:
+            if suppress_error:
+                return
+            else:
+                raise ValueError(
+                    "Unsuccessful convolution: {}\nOld: {}\nNew: {}"
+                    "".format(err, proj.beam, newbeam))
+
+    if append_raw and my_append_raw:
+        return newproj, convproj, wtproj
+    else:
+        return newproj
