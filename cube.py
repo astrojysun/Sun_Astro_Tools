@@ -12,6 +12,11 @@ def convolve_cube(cube, newbeam, res_tol=0.0, min_coverage=0.8,
     """
     Convolve a spectral cube to a specified beam.
 
+    This function is essentially a wrapper around
+    `~spectral_cube.SpectralCube.convolve_to()`, but it treats
+    NaN values / edge effect in a more careful way
+    (see the documentation of keyword 'min_coverage' below).
+
     Parameters
     ----------
     cube : ~spectral_cube.SpectralCube object
@@ -115,6 +120,7 @@ def convolve_cube(cube, newbeam, res_tol=0.0, min_coverage=0.8,
 
 
 def calc_noise_in_cube(cube, masking_scheme='simple', mask=None,
+                       spatial_average_npix=None,
                        spatial_average_nbeam=5.0,
                        spectral_average_nchan=5, verbose=False):
     """
@@ -131,6 +137,10 @@ def calc_noise_in_cube(cube, masking_scheme='simple', mask=None,
     mask : `np.ndarray` object, optional
         User-specified signal mask (this parameter is ignored if
         `masking_scheme` is not 'user')
+    spatial_average_npix : float, optional
+        Size of the spatial averaging box, in terms of pixel number
+        If not None, `spatial_average_nbeam` will be ingored.
+        (Default: None)
     spatial_average_nbeam : float, optional
         Size of the spatial averaging box, in the unit of beam FWHM
         (Default: 5.0)
@@ -195,10 +205,12 @@ def calc_noise_in_cube(cube, masking_scheme='simple', mask=None,
         mask_s = (((cube - uplim_s) < (0 * cube.unit)) &
                   ((cube - lolim_s) > (0 * cube.unit)))
     rms_s = cube.with_mask(mask_s).mad_std(axis=0).quantity.value
-    beamFWHM_pix = (cube.beam.major.to(u.deg).value /
-                    np.abs(cube.wcs.celestial.wcs.cdelt.min()))
-    beamFWHM_pix = np.max([beamFWHM_pix, 3.])
-    spatial_average_npix = int(spatial_average_nbeam * beamFWHM_pix)
+    if spatial_average_npix is None:
+        beamFWHM_pix = (cube.beam.major.to(u.deg).value /
+                        np.abs(cube.wcs.celestial.wcs.cdelt.min()))
+        beamFWHM_pix = np.max([beamFWHM_pix, 3.])
+        spatial_average_npix = int(spatial_average_nbeam *
+                                   beamFWHM_pix)
     rms_s = generic_filter(rms_s, np.nanmedian,
                            mode='constant', cval=np.nan,
                            size=spatial_average_npix)
@@ -234,7 +246,8 @@ def calc_noise_in_cube(cube, masking_scheme='simple', mask=None,
 
 def find_signal_in_cube(cube, noisecube, mask=None,
                         nchan_hi=3, snr_hi=3.5, nchan_lo=2, snr_lo=2,
-                        prune_by_fracbeam=1., expand_by_fracbeam=0.,
+                        prune_by_npix=None, prune_by_fracbeam=1.,
+                        expand_by_npix=None, expand_by_fracbeam=0.,
                         expand_by_nchan=2, verbose=False):
     """
     Identify (positive) signal in a cube based on S/N ratio.
@@ -253,11 +266,11 @@ def find_signal_in_cube(cube, noisecube, mask=None,
        a 'signal mask' that defines 'detections'.
     4. Label 'detections' by connectivity, and prune 'detections'
        in the 'signal mask' if projected area on sky smaller than
-       a given fraction of the beam area.
-       (fraction specified by `prune_by_fracbeam`)
+       a given number of pixels or a fraction of the beam area.
+       (fraction specified by `prune_by_npix` or `prune_by_fracbeam`)
     5. Expand the 'signal mask' along the spatial dimensions by
-       a given fraction of the beam FWHM.
-       (fraction specified by `expand_by_fracbeam`)
+       a given number of pixels or a fraction of the beam FWHM.
+       (fraction specified by `expand_by_npix` or `expand_by_fracbeam`)
     6. Expand the 'signal mask' along the spectral dimension by
        a given number of channels.
        (# of channels specified by `expand_by_nchan`)
@@ -282,10 +295,19 @@ def find_signal_in_cube(cube, noisecube, mask=None,
     snr_lo : float, optional
         S/N threshold specified for the 'wing mask'
         (Default: 2.0)
+    prune_by_npix : float, optional
+        Threshold for pruning. All detections with projected area smaller
+        than this number of pixels will be pruned. If not None,
+        `prune_by_fracbeam` will be ignored.
+        (Default: None)
     prune_by_fracbeam : float, optional
         Threshold for pruning. All detections with projected area smaller
         than this threshold times the beam area will be pruned.
         (Default: 1.0)
+    expand_by_npix : float, optional
+        Expand the signal mask along the spatial dimensions by this
+        number of pixels. If not None, `expand_by_fracbeam` will be ignored.
+        (Default: None)
     expand_by_fracbeam : float, optional
         Expand the signal mask along the spatial dimensions by this
         fraction times the beam FWHM.
@@ -346,32 +368,31 @@ def find_signal_in_cube(cube, noisecube, mask=None,
                                   mask=mask_wing)
 
     # prune detections with small projected area on the sky
-    if prune_by_fracbeam > 0:
+    if (prune_by_fracbeam > 0) or (prune_by_npix is not None):
         if verbose:
-            print("Pruning detections with projected area smaller "
-                  "than {} times the beam area..."
-                  "".format(prune_by_fracbeam))
-        beamarea_pix = np.abs(cube.beam.sr.to(u.deg**2).value /
-                              cube.wcs.celestial.wcs.cdelt.prod())
+            print("Pruning detections with small projected area")
+        if prune_by_npix is None:
+            beamarea_pix = np.abs(cube.beam.sr.to(u.deg**2).value /
+                                  cube.wcs.celestial.wcs.cdelt.prod())
+            prune_by_npix = beamarea_pix * prune_by_fracbeam
         labels, count = label(mask_signal)
         for ind in np.arange(count)+1:
-            if ((labels == ind).any(axis=0).sum() <
-                (beamarea_pix * prune_by_fracbeam)):
+            if ((labels == ind).any(axis=0).sum() < prune_by_npix):
                 mask_signal[labels == ind] = False
 
     # expand along spatial dimensions by a fraction of beam FWHM
-    if expand_by_fracbeam > 0:
+    if (expand_by_fracbeam > 0) or (expand_by_npix is not None):
         if verbose:
-            print("Expanding along spatial dimensions by {} times "
-                  "the beam FWHM"
-                  "".format(expand_by_fracbeam))
-        beamHWHM_pix = np.ceil(
-            cube.beam.major.to(u.deg).value / 2 /
-            np.abs(cube.wcs.celestial.wcs.cdelt.min()))
-        structure = np.zeros([3, beamHWHM_pix*2+1, beamHWHM_pix*2+1])
-        Y, X = np.ogrid[:beamHWHM_pix*2+1, :beamHWHM_pix*2+1]
-        R = np.sqrt((X - beamHWHM_pix)**2 + (Y-beamHWHM_pix)**2)
-        structure[1, :] = (R <= beamHWHM_pix)
+            print("Expanding signal mask along spatial dimensions")
+        if expand_by_npix is None:
+            beamHWHM_pix = np.ceil(
+                cube.beam.major.to(u.deg).value / 2 /
+                np.abs(cube.wcs.celestial.wcs.cdelt.min()))
+            expand_by_npix = int(beamHWHM_pix * expand_by_fracbeam)
+        structure = np.zeros([3, expand_by_npix*2+1, expand_by_npix*2+1])
+        Y, X = np.ogrid[:expand_by_npix*2+1, :expand_by_npix*2+1]
+        R = np.sqrt((X - expand_by_npix)**2 + (Y-expand_by_npix)**2)
+        structure[1, :] = (R <= expand_by_npix)
         mask_signal = binary_dilation(mask_signal, iterations=1,
                                       structure=structure,
                                       mask=mask)
