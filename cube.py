@@ -137,7 +137,7 @@ def calc_noise_in_cube(cube, masking_scheme='simple', mask=None,
     mask : `np.ndarray` object, optional
         User-specified signal mask (this parameter is ignored if
         `masking_scheme` is not 'user')
-    spatial_average_npix : float, optional
+    spatial_average_npix : int, optional
         Size of the spatial averaging box, in terms of pixel number
         If not None, `spatial_average_nbeam` will be ingored.
         (Default: None)
@@ -295,7 +295,7 @@ def find_signal_in_cube(cube, noisecube, mask=None,
     snr_lo : float, optional
         S/N threshold specified for the 'wing mask'
         (Default: 2.0)
-    prune_by_npix : float, optional
+    prune_by_npix : int, optional
         Threshold for pruning. All detections with projected area smaller
         than this number of pixels will be pruned. If not None,
         `prune_by_fracbeam` will be ignored.
@@ -304,13 +304,13 @@ def find_signal_in_cube(cube, noisecube, mask=None,
         Threshold for pruning. All detections with projected area smaller
         than this threshold times the beam area will be pruned.
         (Default: 1.0)
-    expand_by_npix : float, optional
+    expand_by_npix : int, optional
         Expand the signal mask along the spatial dimensions by this
         number of pixels. If not None, `expand_by_fracbeam` will be ignored.
         (Default: None)
     expand_by_fracbeam : float, optional
         Expand the signal mask along the spatial dimensions by this
-        fraction times the beam FWHM.
+        fraction times the beam HWHM.
         (Default: 0.0)
     expand_by_nchan : int, optional
         Expand the signal mask along the spectral dimensions by this
@@ -449,8 +449,8 @@ def convolve_projection(proj, newbeam, res_tol=0.0, min_coverage=0.8,
     """
     Convolve a 2D image to a specified beam.
 
-    Very similar to `convolve_cube()` in this module, this function
-    deals with 2D images (i.e., projections) rather than 3D cubes.
+    Very similar to `convolve_cube()`, but this function deals with
+    2D images (i.e., projections) rather than 3D cubes.
 
     Parameters
     ----------
