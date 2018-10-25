@@ -21,14 +21,14 @@ def deproject(params, wcs_cel, naxis, return_xymap=False):
     y0_deg = params['DEC_DEG'].item()
 
     # create ra and dec grids
-    rgrid = np.arange(naxis[0])
-    dgrid = np.arange(naxis[1]).reshape(-1, 1)
-    rmap, dmap = wcs_cel.wcs_pix2world(rgrid, dgrid, 0)
+    ragrid = np.arange(naxis[0])
+    decgrid = np.arange(naxis[1]).reshape(-1, 1)
+    ramap, decmap = wcs_cel.wcs_pix2world(ragrid, decgrid, 0)
 
     # recast the ra and dec arrays in term of the center coordinates
     # arrays are now in degrees from the center
-    dxmap_deg = (rmap - x0_deg) * np.cos(np.deg2rad(y0_deg))
-    dymap_deg = dmap - y0_deg
+    dxmap_deg = (ramap - x0_deg) * np.cos(np.deg2rad(y0_deg))
+    dymap_deg = decmap - y0_deg
 
     # rotation angle (rotate x-axis up to the major axis)
     rotangle = np.pi/2 - np.deg2rad(pa_deg)
