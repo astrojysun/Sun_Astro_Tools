@@ -6,16 +6,21 @@ from astropy import units as u
 from spectral_cube import SpectralCube, Projection
 
 
-def convolve_cube(cube, newbeam, res_tol=0.0, min_coverage=0.8,
+def convolve_cube(cube, newbeam, mode='datacube',
+                  res_tol=0.0, min_coverage=0.8,
                   append_raw=False, verbose=False,
                   suppress_error=False):
     """
-    Convolve a spectral cube to a specified beam.
+    Convolve a spectral cube or an rms noise cube to a specified beam.
 
-    This function is essentially a wrapper around
+    The 'datacube' mode is essentially a wrapper around
     `~spectral_cube.SpectralCube.convolve_to()`, but it treats
     NaN values / edge effect in a more careful way
     (see the documentation of keyword 'min_coverage' below).
+
+    The 'noisecube' mode handles rms noise cubes in a way that it
+    correctly predicts the rms noise for the corresponding data cube
+    convolved to the same specified beam.
 
     Parameters
     ----------
@@ -23,6 +28,12 @@ def convolve_cube(cube, newbeam, res_tol=0.0, min_coverage=0.8,
         Input spectral cube
     newbeam : radio_beam.Beam object
         Target beam to convolve to
+    mode : {'datacube', 'noisecube'}, optional
+        Whether the input cube is a data cube or an rms noise cube.
+        In the former case, a direct convolution is performed.
+        In the latter case, the convolution is done in a way that
+        it returns the appropriate noise cube corresponding to
+        the convolved data cube. (Default: 'datacube')
     res_tol : float, optional
         Tolerance on the difference between input/output resolution
         By default, a convolution is performed on the input cube
@@ -56,6 +67,7 @@ def convolve_cube(cube, newbeam, res_tol=0.0, min_coverage=0.8,
         comprising 3 cubes (when append_raw=True)
     """
 
+    from radio_beam import Beam
     from functools import partial
     from astropy.convolution import convolve_fft
 
@@ -71,6 +83,9 @@ def convolve_cube(cube, newbeam, res_tol=0.0, min_coverage=0.8,
                                 boundary='fill', fill_value=0.,
                                 allow_huge=True, quiet=~verbose)
 
+    if mode not in ('datacube', 'noisecube'):
+        raise ValueError("Invalid `mode` value: {}".format(mode))
+
     if (res_tol > 0) and (newbeam.major != newbeam.minor):
         raise ValueError("You cannot specify a non-zero resolution "
                          "torelance if the target beam is not round")
@@ -85,18 +100,36 @@ def convolve_cube(cube, newbeam, res_tol=0.0, min_coverage=0.8,
         newcube = cube.unmasked_copy().with_mask(cube.mask.include())
     else:
         if verbose:
-            print("Convolving cube...")
+            print("Deconvolving beam...")
         try:
-            convcube = cube.convolve_to(newbeam,
-                                        convolve=convolve_func)
+            beamdiff = newbeam.deconvolve(cube.beam)
+        except ValueError as err:
+            if suppress_error:
+                if verbose:
+                    print("{}\nOld: {}\nNew: {}"
+                          "".format(err, cube.beam, newbeam))
+                    print("Exiting...")
+                return
+            else:
+                raise ValueError(
+                    "{}\nOld: {}\nNew: {}"
+                    "".format(err, cube.beam, newbeam))
+        if verbose:
+            print("Convolving cube...")
+        if mode == 'datacube':
+            # --------------------------------------------------------
+            # do convolution
+            convcube = cube.convolve_to(
+                newbeam, convolve=convolve_func)
             if min_coverage is not None:
                 # divide the raw convolved image by the weight image
+                # to correct for filling fraction
                 my_append_raw = True
                 wtcube = SpectralCube(
                     cube.mask.include().astype('float'),
                     cube.wcs, beam=cube.beam)
-                wtcube = wtcube.convolve_to(newbeam,
-                                            convolve=convolve_func)
+                wtcube = wtcube.convolve_to(
+                    newbeam, convolve=convolve_func)
                 newcube = convcube / wtcube.unmasked_data[:]
                 # mask all pixels w/ weight smaller than min_coverage
                 threshold = min_coverage * u.dimensionless_unscaled
@@ -104,14 +137,50 @@ def convolve_cube(cube, newbeam, res_tol=0.0, min_coverage=0.8,
             else:
                 my_append_raw = False
                 newcube = convcube
-            print("")  # force line break after the progress bar
-        except ValueError as err:
-            if suppress_error:
-                return
+            # --------------------------------------------------------
+        elif mode == 'noisecube':
+            # --------------------------------------------------------
+            # Analytically derive the rms noise cube for the low
+            # resolution data cube. Steps are described as follows:
+            # Step 1: square the high resolution noise cube
+            cubesq = cube**2
+            # Step 2: convolve the squared noise cube with a kernel
+            #         that is sqrt(2) times narrower than the one
+            #         used for data cube convolution
+            beamdiff_small = Beam(major=beamdiff.major/np.sqrt(2),
+                                  minor=beamdiff.minor/np.sqrt(2),
+                                  pa=beamdiff.pa)
+            newbeam_small = cube.beam.convolve(beamdiff_small)
+            convcubesq = cubesq.convolve_to(
+                newbeam_small, convolve=convolve_func)
+            if min_coverage is not None:
+                # divide the raw convolved image by the weight image
+                # to correct for filling fraction
+                my_append_raw = True
+                wtcube_o = SpectralCube(
+                    cube.mask.include().astype('float'),
+                    cube.wcs, beam=cube.beam)
+                wtcube = wtcube_o.convolve_to(
+                    newbeam_small, convolve=convolve_func)
+                newcubesq = convcubesq / wtcube.unmasked_data[:]
+                # mask all pixels w/ weight smaller than min_coverage
+                # (here I force the masking of the noise cube to be
+                #  consistent with that of the data cube)
+                threshold = min_coverage * u.dimensionless_unscaled
+                wtcube_d = wtcube_o.convolve_to(
+                    newbeam, convolve=convolve_func)
+                newcubesq = newcubesq.with_mask(wtcube_d >= threshold)
             else:
-                raise ValueError(
-                    "Unsuccessful convolution: {}\nOld: {}\nNew: {}"
-                    "".format(err, cube.beam, newbeam))
+                my_append_raw = False
+                newcubesq = convcubesq
+            # Step 3: find the square root of the convolved noise cube
+            convcube = np.sqrt(convcubesq)
+            newcube = np.sqrt(newcubesq)
+            # Step 4: apply a multiplicative factor, which accounts
+            #         for the decrease in rms noise due to averaging
+            convcube *= np.sqrt(cube.beam.sr/newbeam.sr).to('').value
+            newcube *= np.sqrt(cube.beam.sr/newbeam.sr).to('').value
+            # --------------------------------------------------------
 
     if append_raw and my_append_raw:
         return newcube, convcube, wtcube
