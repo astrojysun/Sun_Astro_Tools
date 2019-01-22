@@ -15,7 +15,7 @@ def clean_header(hdr, remove_keys=[], keep_keys=[]):
     ----------
     hdr : fits header object
         Header object to be cleaned
-    remove_keys : {'guess', iterable}
+    remove_keys : {'3D', '2D', iterable}
         List of keys to remove before feeding the header to WCS
     keep_keys : iterable
         List of keys to keep
@@ -25,11 +25,21 @@ def clean_header(hdr, remove_keys=[], keep_keys=[]):
     newhdr : fits header object
         Cleaned header
     """
-    if remove_keys == 'guess':
-        rmkeys = ['WCSAXES', 'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z',
+    if remove_keys == '3D':
+        rmkeys = ['WCSAXES',
+                  'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z',
                   'OBS-RA', 'OBS-DEC', 'MJD-OBS', 'DATE-OBS',
                   'CRVAL4', 'CDELT4', 'CRPIX4', 'CROTA4',
                   'CTYPE4', 'CUNIT4', 'PC1_4', 'PC2_4', 'PC3_4',
+                  'PC4_1', 'PC4_2', 'PC4_3', 'PC4_4']
+    elif remove_keys == '2D':
+        rmkeys = ['WCSAXES', 'SPECSYS', 'RESTFREQ',
+                  'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z',
+                  'OBS-RA', 'OBS-DEC', 'MJD-OBS', 'DATE-OBS',
+                  'CRVAL3', 'CDELT3', 'CRPIX3', 'CROTA3',
+                  'CTYPE3', 'CUNIT3', 'CTYPE4', 'CUNIT4',
+                  'CRVAL4', 'CDELT4', 'CRPIX4', 'CROTA4',
+                  'PC1_3', 'PC1_4', 'PC2_3', 'PC2_4', 'PC3_4',
                   'PC4_1', 'PC4_2', 'PC4_3', 'PC4_4']
     else:
         rmkeys = (remove_keys +
