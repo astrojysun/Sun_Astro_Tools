@@ -15,7 +15,7 @@ def clean_header(hdr, remove_keys=[], keep_keys=[]):
     ----------
     hdr : fits header object
         Header object to be cleaned
-    remove_keys : iterable
+    remove_keys : {'guess', iterable}
         List of keys to remove before feeding the header to WCS
     keep_keys : iterable
         List of keys to keep
@@ -25,10 +25,18 @@ def clean_header(hdr, remove_keys=[], keep_keys=[]):
     newhdr : fits header object
         Cleaned header
     """
-    remove_keys += ['WCSAXES', 'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z',
-                    'OBS-RA', 'OBS-DEC', 'MJD-OBS', 'DATE-OBS']
+    if remove_keys == 'guess':
+        rmkeys = ['WCSAXES', 'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z',
+                  'OBS-RA', 'OBS-DEC', 'MJD-OBS', 'DATE-OBS',
+                  'CRVAL4', 'CDELT4', 'CRPIX4', 'CROTA4',
+                  'CTYPE4', 'CUNIT4', 'PC1_4', 'PC2_4', 'PC3_4',
+                  'PC4_1', 'PC4_2', 'PC4_3', 'PC4_4']
+    else:
+        rmkeys = (remove_keys +
+                  ['WCSAXES', 'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z',
+                   'OBS-RA', 'OBS-DEC', 'MJD-OBS', 'DATE-OBS'])
     newhdr = hdr.copy()
-    for key in remove_keys:
+    for key in rmkeys:
         newhdr.remove(key, ignore_missing=True, remove_all=True)
     newhdr = WCS(newhdr).to_header()
     newhdr.remove('WCSAXES')
