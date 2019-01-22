@@ -17,6 +17,8 @@ def clean_header(hdr, remove_keys=[], keep_keys=[]):
         Header object to be cleaned
     remove_keys : {'3D', '2D', iterable}
         List of keys to remove before feeding the header to WCS
+        If set to '3D', remove keys irrelevant to 3D data cubes;
+        if set to '2D', remove keys irrelevant to 2D images.
     keep_keys : iterable
         List of keys to keep
 
@@ -37,7 +39,7 @@ def clean_header(hdr, remove_keys=[], keep_keys=[]):
                   'PC1_4', 'PC2_4', 'PC3_4']
     elif remove_keys == '2D':
         newhdr['NAXIS'] = 2
-        rmkeys = ['WCSAXES', 'SPECSYS', 'RESTFREQ',
+        rmkeys = ['WCSAXES', 'SPECSYS', 'RESTFRQ',
                   'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z',
                   'OBS-RA', 'OBS-DEC', 'MJD-OBS', 'DATE-OBS',
                   'NAXIS3', 'CTYPE3', 'CUNIT3',
