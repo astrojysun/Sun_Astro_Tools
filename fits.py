@@ -151,6 +151,7 @@ def convolve_image_hdu(inhdu, newbeam, append_raw=False,
     if newimg is None:
         return
     newhdr = inhdu.header.copy(strip=True)
+    newhdr.remove('WCSAXES', ignore_missing=True)
     if not append_raw:
         for key in ['BMAJ', 'BMIN', 'BPA']:
             newhdr[key] = newimg.header[key]
