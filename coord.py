@@ -2,27 +2,62 @@ from __future__ import (division, print_function, absolute_import,
                         unicode_literals)
 
 import numpy as np
+import astropy.units as u
+from astropy.wcs import WCS
+from astropy.coordinates import SkyCoord
 
 
-def deproject(params, wcs_cel, naxis, return_xymap=False):
+def deproject(header=None, wcs=None, naxis=None,
+              center_coord=None, incl=0*u.deg, pa=0*u.deg,
+              return_xymap=False):
 
     """
-    Compute deprojected radii and projected angle (in deg)
-    based on center coordinates, inclination, and position angle.
+    Generate deprojected radii and projected angle maps (in deg)
+    based on a center, inclination, and position angle.
 
-    Transplanted (with minor modification) by J. Sun from the IDL
-    function `deproject`, which is included in the `cpropstoo` package
-    written by A. Leroy.
+    This is the Python version of an IDL function `deproject`
+    in the `cpropstoo` package. See URL below:
+    
+    https://github.com/akleroy/cpropstoo/blob/master/cubes/deproject.pro
     """
 
-    pa_deg = params['POSANG_DEG'].item()
-    i_deg = params['INCL_DEG'].item()
-    x0_deg = params['RA_DEG'].item()
-    y0_deg = params['DEC_DEG'].item()
+    if header is not None:
+        wcs_cel = WCS(header).celestial
+        naxis1 = header['NAXIS1']
+        naxis2 = header['NAXIS2']
+    else:
+        if (wcs is None) or (naxis is None):
+            raise ValueError(
+                "If no header is provided, then both"
+                "`wcs` and `naxis` should be specified.")
+        wcs_cel = wcs.celestial
+        naxis1, naxis2 = naxis
+
+    if center_coord is None:
+        raise ValueError(
+            "`center_coord` should be either a SkyCoord object "
+            "or an array-like object with two elements.")
+    if isinstance(center_coord, SkyCoord):
+        x0_deg = center_coord.ra.degree
+        y0_deg = center_coord.dec.degree
+    else:
+        x0_deg, y0_deg = center_coord
+        if hasattr(x0_deg, 'unit'):
+            x0_deg = x0_deg.to(u.deg).value
+            y0_deg = y0_deg.to(u.deg).value
+
+    if hasattr(incl, 'unit'):
+        incl_deg = incl.to(u.deg).value
+    else:
+        incl_deg = incl
+    if hasattr(pa, 'unit'):
+        pa_deg = pa.to(u.deg).value
+    else:
+        pa_deg = pa
 
     # create ra and dec grids
-    ragrid = np.arange(naxis[0])
-    decgrid = np.arange(naxis[1]).reshape(-1, 1)
+    ragrid = np.arange(naxis1)
+    decgrid = np.arange(naxis2).reshape(-1, 1)
     ramap, decmap = wcs_cel.wcs_pix2world(ragrid, decgrid, 0)
 
     # recast the ra and dec arrays in term of the center coordinates
@@ -38,7 +73,7 @@ def deproject(params, wcs_cel, naxis, return_xymap=False):
                     dymap_deg * np.sin(rotangle))
     deprojdy_deg = (dymap_deg * np.cos(rotangle) -
                     dxmap_deg * np.sin(rotangle))
-    deprojdy_deg /= np.cos(np.deg2rad(i_deg))
+    deprojdy_deg /= np.cos(np.deg2rad(incl_deg))
 
     # make map of deprojected distance from the center
     rmap_deg = np.sqrt(deprojdx_deg**2 + deprojdy_deg**2)
