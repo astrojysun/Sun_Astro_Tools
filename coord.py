@@ -7,17 +7,44 @@ from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord
 
 
-def deproject(header=None, wcs=None, naxis=None,
-              center_coord=None, incl=0*u.deg, pa=0*u.deg,
+def deproject(center_coord=None, incl=0*u.deg, pa=0*u.deg,
+              header=None, wcs=None, naxis=None,
               return_xymap=False):
 
     """
-    Generate deprojected radii and projected angle maps (in deg)
-    based on a center, inclination, and position angle.
+    Generate deprojected radius and projected angle maps.
 
-    This is the Python version of an IDL function `deproject`
+    This function deals with projected images of astronomical objects
+    with an intrinsic disk geometry. Given sky coordinates of the
+    disk center, disk inclination and position angle, this function
+    generates 2D maps of deprojected radius and projected angle.
+    Both quantities are defined relative to the center in the inclined
+    disk frame. The outputs are the projected maps onto the sky.
+
+    Parameters
+    ----------
+    center_coord : `~astropy.coordinates.SkyCoord` object or array-like
+        Sky coordinates of the disk center
+    incl : `~astropy.units.Quantity` object or number, optional
+        Inclination angle of the disk (0 degree means face-on)
+        Default is 0 degree.
+    pa : `~astropy.units.Quantity` object or number, optional
+        Position angle of the disk (red/receding side, North->East)
+        Default is 0 degree.
+    header : `~astropy.io.fits.Header` object, optional
+        FITS header specifying the WCS and size of the output 2D maps
+    wcs : `~astropy.wcs.WCS` object, optional
+        WCS of the output 2D maps
+    naxis : array-like (with two elements), optional
+        Size of the output 2D maps
+    return_xymap : bool, optional
+        Whether to return the projected x-y coordinates together with
+        deprojected radius and angle maps. Default is to not return.
+
+    Notes
+    -----
+    This is the Python version of an IDL function `deproject` included
     in the `cpropstoo` package. See URL below:
-    
     https://github.com/akleroy/cpropstoo/blob/master/cubes/deproject.pro
     """
 
