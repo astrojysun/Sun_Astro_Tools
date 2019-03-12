@@ -43,7 +43,7 @@ def clean_header(hdr, remove_keys=[], keep_keys=[]):
                   'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z',
                   'OBS-RA', 'OBS-DEC', 'MJD-OBS', 'DATE-OBS',
                   'NAXIS3', 'CTYPE3', 'CUNIT3',
-                  'CRVAL3', 'CDELT3', 'CRPIX3', 'CROTA3'
+                  'CRVAL3', 'CDELT3', 'CRPIX3', 'CROTA3',
                   'NAXIS4', 'CTYPE4', 'CUNIT4',
                   'CRVAL4', 'CDELT4', 'CRPIX4', 'CROTA4',
                   'PC1_3', 'PC1_4', 'PC2_3', 'PC2_4',
