@@ -15,8 +15,10 @@ def clean_header(hdr, remove_keys=[], keep_keys=[]):
     ----------
     hdr : fits header object
         Header object to be cleaned
-    remove_keys : iterable
+    remove_keys : {'3D', '2D', iterable}
         List of keys to remove before feeding the header to WCS
+        If set to '3D', remove keys irrelevant to 3D data cubes;
+        if set to '2D', remove keys irrelevant to 2D images.
     keep_keys : iterable
         List of keys to keep
 
@@ -25,10 +27,33 @@ def clean_header(hdr, remove_keys=[], keep_keys=[]):
     newhdr : fits header object
         Cleaned header
     """
-    remove_keys += ['WCSAXES', 'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z',
-                    'OBS-RA', 'OBS-DEC', 'MJD-OBS', 'DATE-OBS']
     newhdr = hdr.copy()
-    for key in remove_keys:
+    if remove_keys == '3D':
+        newhdr['NAXIS'] = 3
+        rmkeys = ['WCSAXES',
+                  'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z',
+                  'OBS-RA', 'OBS-DEC', 'MJD-OBS', 'DATE-OBS',
+                  'NAXIS4', 'CTYPE4', 'CUNIT4',
+                  'CRVAL4', 'CDELT4', 'CRPIX4', 'CROTA4',
+                  'PC4_1', 'PC4_2', 'PC4_3', 'PC4_4',
+                  'PC1_4', 'PC2_4', 'PC3_4']
+    elif remove_keys == '2D':
+        newhdr['NAXIS'] = 2
+        rmkeys = ['WCSAXES', 'SPECSYS', 'RESTFRQ',
+                  'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z',
+                  'OBS-RA', 'OBS-DEC', 'MJD-OBS', 'DATE-OBS',
+                  'NAXIS3', 'CTYPE3', 'CUNIT3',
+                  'CRVAL3', 'CDELT3', 'CRPIX3', 'CROTA3',
+                  'NAXIS4', 'CTYPE4', 'CUNIT4',
+                  'CRVAL4', 'CDELT4', 'CRPIX4', 'CROTA4',
+                  'PC1_3', 'PC1_4', 'PC2_3', 'PC2_4',
+                  'PC3_1', 'PC3_2', 'PC3_3', 'PC3_4',
+                  'PC4_1', 'PC4_2', 'PC4_3', 'PC4_4']
+    else:
+        rmkeys = (remove_keys +
+                  ['WCSAXES', 'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z',
+                   'OBS-RA', 'OBS-DEC', 'MJD-OBS', 'DATE-OBS'])
+    for key in rmkeys:
         newhdr.remove(key, ignore_missing=True, remove_all=True)
     newhdr = WCS(newhdr).to_header()
     newhdr.remove('WCSAXES')
@@ -126,6 +151,7 @@ def convolve_image_hdu(inhdu, newbeam, append_raw=False,
     if newimg is None:
         return
     newhdr = inhdu.header.copy(strip=True)
+    newhdr.remove('WCSAXES', ignore_missing=True)
     if not append_raw:
         for key in ['BMAJ', 'BMIN', 'BPA']:
             newhdr[key] = newimg.header[key]
