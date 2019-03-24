@@ -2,12 +2,11 @@
 A package including tools for numerical integration of orbits.
 """
 
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
+from __future__ import (
+    division, print_function, absolute_import, unicode_literals)
 
 import numpy as np
 from numpy import ndarray
-
 from astropy.utils.console import ProgressBar
 
 

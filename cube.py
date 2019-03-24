@@ -1,8 +1,14 @@
-from __future__ import (division, print_function, absolute_import,
-                        unicode_literals)
+from __future__ import (
+    division, print_function, absolute_import, unicode_literals)
 
+from functools import partial
 import numpy as np
+from scipy.ndimage import generic_filter, binary_dilation, label
+from scipy.stats import pearsonr
 from astropy import units as u
+from astropy.stats import mad_std
+from astropy.convolution import convolve_fft
+from radio_beam import Beam
 from spectral_cube import SpectralCube, Projection
 
 
@@ -66,10 +72,6 @@ def convolve_cube(cube, newbeam, mode='datacube',
         Convolved spectral cube (when append_raw=False), or a tuple
         comprising 3 cubes (when append_raw=True)
     """
-
-    from radio_beam import Beam
-    from functools import partial
-    from astropy.convolution import convolve_fft
 
     if min_coverage is None:
         # Skip coverage check and preserve NaN values.
@@ -225,9 +227,6 @@ def calc_noise_in_cube(cube, masking_scheme='simple', mask=None,
     rmscube : SpectralCube object
         Spectral cube containing the rms noise at each ppv location
     """
-
-    from scipy.ndimage import generic_filter
-    from astropy.stats import mad_std
 
     if masking_scheme not in ['simple', 'user']:
         raise ValueError("'masking_scheme' should be specified as"
@@ -395,8 +394,6 @@ def find_signal_in_cube(cube, noisecube, mask=None,
         Input cube masked by the generated 'signal mask'.
     """
 
-    from scipy.ndimage import binary_dilation, label
-
     if not cube.unit.is_equivalent(noisecube.unit):
         raise ValueError("Incompatable units between 'cube' and "
                          "'noisecube'!")
@@ -501,8 +498,6 @@ def calc_channel_corr(cube, mask=None):
     p-value : float
         Two-tailed p-value
     """
-    from scipy.stats import pearsonr
-
     if mask is None:
         mask = cube.mask.include()
     mask &= np.roll(mask, -1, axis=0)
@@ -559,9 +554,6 @@ def convolve_projection(proj, newbeam, res_tol=0.0, min_coverage=0.8,
         Convolved 2D image (when append_raw=False), or a tuple
         comprising 3 images (when append_raw=True)
     """
-
-    from functools import partial
-    from astropy.convolution import convolve_fft
 
     if min_coverage is None:
         # Skip coverage check and preserve NaN values.

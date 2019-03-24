@@ -1,10 +1,12 @@
-from __future__ import (division, print_function, absolute_import,
-                        unicode_literals)
+from __future__ import (
+    division, print_function, absolute_import, unicode_literals)
 
 import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
+from reproject import reproject_interp
 from spectral_cube import SpectralCube, Projection
+from .cube import convolve_projection, convolve_cube
 
 
 def clean_header(hdr, remove_keys=[], keep_keys=[]):
@@ -87,8 +89,6 @@ def regrid_image_hdu(inhdu, newhdr, keep_header_keys=[],
     outhdu : FITS HDU object
         Regridded HDU
     """
-    from reproject import reproject_interp
-        
     if inhdu.header['NAXIS'] < 2 or inhdu.header['NAXIS'] > 4:
         raise ValueError("Input HDU has 'NAXIS'={}"
                          "".format(inhdu.header['NAXIS']))
@@ -140,14 +140,14 @@ def convolve_image_hdu(inhdu, newbeam, append_raw=False,
                          "".format(inhdu.header['NAIXS']))
     if naxis == 2:
         oldimg = Projection.from_hdu(inhdu)
-        from .cube import convolve_projection as convolve
+        newimg = convolve_projection(
+            oldimg, newbeam, append_raw=append_raw, **kwargs)
     else:
         oldimg = SpectralCube(inhdu.data, wcs=WCS(inhdu.header),
                               header=inhdu.header)
         oldimg.allow_huge_operations = allow_huge_operations
-        from .cube import convolve_cube as convolve
-    newimg = convolve(oldimg, newbeam, append_raw=append_raw,
-                      **kwargs)
+        newimg = convolve_cube(
+            oldimg, newbeam, append_raw=append_raw, **kwargs)
     if newimg is None:
         return
     newhdr = inhdu.header.copy(strip=True)
