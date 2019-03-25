@@ -143,8 +143,9 @@ def convolve_image_hdu(inhdu, newbeam, append_raw=False,
         newimg = convolve_projection(
             oldimg, newbeam, append_raw=append_raw, **kwargs)
     else:
-        oldimg = SpectralCube(inhdu.data, wcs=WCS(inhdu.header),
-                              header=inhdu.header)
+        oldimg = SpectralCube(
+            inhdu.data, wcs=WCS(inhdu.header), header=inhdu.header)
+        oldimg = oldimg.with_mask(np.isfinite(inhdu.data))
         oldimg.allow_huge_operations = allow_huge_operations
         newimg = convolve_cube(
             oldimg, newbeam, append_raw=append_raw, **kwargs)
