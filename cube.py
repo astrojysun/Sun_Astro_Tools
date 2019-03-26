@@ -165,6 +165,8 @@ def convolve_cube(
                     cube.mask.include().astype('float'),
                     cube.wcs, beam=cube.beam).with_mask(
                         np.ones(cube.shape).astype('?'))
+                wtcube_o.allow_huge_operations = (
+                    cube.allow_huge_operations)
                 wtcube = wtcube_o.convolve_to(
                     newbeam_small, convolve=convolve_func)
                 newcubesq = convcubesq / wtcube.unmasked_data[:]
