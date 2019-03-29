@@ -1,6 +1,7 @@
 from __future__ import (
     division, print_function, absolute_import, unicode_literals)
 
+import re
 import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
@@ -17,10 +18,12 @@ def clean_header(hdr, remove_keys=[], keep_keys=[]):
     ----------
     hdr : fits header object
         Header object to be cleaned
-    remove_keys : {'3D', '2D', iterable}
+    remove_keys : {'3D', '2D', 'celestial', iterable}
         List of keys to remove before feeding the header to WCS
         If set to '3D', remove keys irrelevant to 3D data cubes;
-        if set to '2D', remove keys irrelevant to 2D images.
+        if set to '2D', remove keys irrelevant to 2D images;
+        if set to 'celestial', remove keys irrelevant to the
+        celestial coordinate frame.
     keep_keys : iterable
         List of keys to keep
 
@@ -33,37 +36,43 @@ def clean_header(hdr, remove_keys=[], keep_keys=[]):
     if remove_keys == '3D':
         newhdr['NAXIS'] = 3
         rmkeys = [
-            'WCSAXES', 'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z',
+            'WCSAXES', 'NAXIS4', 'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z',
             'OBS-RA', 'OBS-DEC', 'MJD-OBS', 'DATE-OBS',
-            'NAXIS4', 'CTYPE4', 'CUNIT4',
-            'CRVAL4', 'CDELT4', 'CRPIX4', 'CROTA4',
-            'PC4_1', 'PC4_2', 'PC4_3', 'PC4_4',
-            'PC1_4', 'PC2_4', 'PC3_4',
-            'PC004001', 'PC004002', 'PC004003', 'PC004004',
-            'PC001004', 'PC002004', 'PC003004',
         ]
+        for key in rmkeys:
+            newhdr.remove(key, ignore_missing=True, remove_all=True)
+        for key in hdr:
+            if re.match('^C[A-Z]*[4]$', key) is not None:
+                newhdr.remove(key, remove_all=True)
+            if re.match('^PC[0-9_]*[4][0-9_]*', key) is not None:
+                newhdr.remove(key, remove_all=True)
     elif remove_keys == '2D':
         newhdr['NAXIS'] = 2
         rmkeys = [
-            'WCSAXES', 'SPECSYS', 'RESTFRQ',
-            'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z',
+            'WCSAXES', 'SPECSYS', 'RESTFRQ', 'NAXIS3', 'NAXIS4',
             'OBS-RA', 'OBS-DEC', 'MJD-OBS', 'DATE-OBS',
-            'NAXIS3', 'CTYPE3', 'CUNIT3',
-            'CRVAL3', 'CDELT3', 'CRPIX3', 'CROTA3',
-            'NAXIS4', 'CTYPE4', 'CUNIT4',
-            'CRVAL4', 'CDELT4', 'CRPIX4', 'CROTA4',
-            'PC1_3', 'PC2_3', 'PC3_1', 'PC3_2', 'PC3_3', 'PC3_4',
-            'PC1_4', 'PC2_4', 'PC4_1', 'PC4_2', 'PC4_3', 'PC4_4',
-            'PC001003', 'PC001004', 'PC002003', 'PC002004',
-            'PC003001', 'PC003002', 'PC003003', 'PC003004',
-            'PC004001', 'PC004002', 'PC004003', 'PC004004',
+            'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z',
         ]
+        for key in rmkeys:
+            newhdr.remove(key, ignore_missing=True, remove_all=True)
+        for key in hdr:
+            if re.match('^C[A-Z]*[34]$', key) is not None:
+                newhdr.remove(key, remove_all=True)
+            if re.match('^PC[0-9_]*[34][0-9_]*', key) is not None:
+                newhdr.remove(key, remove_all=True)
+    elif remove_keys == 'celestial':
+        rmkeys = ['WCSAXES', 'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z']
+        for key in rmkeys:
+            newhdr.remove(key, ignore_missing=True, remove_all=True)
+        newhdr = WCS(newhdr).celestial.to_header()
+        rmkeys = ['WCSAXES', 'SPECSYS', 'RESTFRQ',
+                  'MJD-OBS', 'DATE-OBS', 'OBS-RA', 'OBS-DEC']
+        for key in rmkeys:
+            newhdr.remove(key, ignore_missing=True, remove_all=True)
     else:
         rmkeys = (remove_keys +
                   ['WCSAXES', 'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z',
                    'OBS-RA', 'OBS-DEC', 'MJD-OBS', 'DATE-OBS'])
-    for key in rmkeys:
-        newhdr.remove(key, ignore_missing=True, remove_all=True)
     newhdr = WCS(newhdr).to_header()
     newhdr.remove('WCSAXES')
     for key in keep_keys:
