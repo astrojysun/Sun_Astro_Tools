@@ -1,24 +1,29 @@
-from __future__ import (division, print_function, absolute_import,
-                        unicode_literals)
+from __future__ import (
+    division, print_function, absolute_import, unicode_literals)
 
+from functools import partial
 import numpy as np
+from scipy.ndimage import generic_filter, binary_dilation, label
+from scipy.stats import pearsonr
 from astropy import units as u
+from astropy.stats import mad_std
+from astropy.convolution import convolve_fft
+from radio_beam import Beam
 from spectral_cube import SpectralCube, Projection
 
 
-def convolve_cube(cube, newbeam, mode='datacube',
-                  res_tol=0.0, min_coverage=0.8,
-                  append_raw=False, verbose=False,
-                  suppress_error=False):
+def convolve_cube(
+        cube, newbeam, mode='datacube', res_tol=0.0, min_coverage=0.8,
+        append_raw=False, verbose=False, suppress_error=False):
     """
     Convolve a spectral cube or an rms noise cube to a specified beam.
 
-    The 'datacube' mode is essentially a wrapper around
-    `~spectral_cube.SpectralCube.convolve_to()`, but it treats
-    NaN values / edge effect in a more careful way
-    (see the documentation of keyword 'min_coverage' below).
+    'datacube' mode: This is basically a wrapper around
+    `~spectral_cube.SpectralCube.convolve_to()`,
+    but it treats NaN values / edge effect in a more careful way
+    (see the description of keyword 'min_coverage' below).
 
-    The 'noisecube' mode handles rms noise cubes in a way that it
+    'noisecube' mode: It handles rms noise cubes in a way that it
     correctly predicts the rms noise for the corresponding data cube
     convolved to the same specified beam.
 
@@ -66,10 +71,6 @@ def convolve_cube(cube, newbeam, mode='datacube',
         Convolved spectral cube (when append_raw=False), or a tuple
         comprising 3 cubes (when append_raw=True)
     """
-
-    from radio_beam import Beam
-    from functools import partial
-    from astropy.convolution import convolve_fft
 
     if min_coverage is None:
         # Skip coverage check and preserve NaN values.
@@ -127,7 +128,10 @@ def convolve_cube(cube, newbeam, mode='datacube',
                 my_append_raw = True
                 wtcube = SpectralCube(
                     cube.mask.include().astype('float'),
-                    cube.wcs, beam=cube.beam)
+                    cube.wcs, beam=cube.beam).with_mask(
+                        np.ones(cube.shape).astype('?'))
+                wtcube.allow_huge_operations = (
+                    cube.allow_huge_operations)
                 wtcube = wtcube.convolve_to(
                     newbeam, convolve=convolve_func)
                 newcube = convcube / wtcube.unmasked_data[:]
@@ -159,7 +163,10 @@ def convolve_cube(cube, newbeam, mode='datacube',
                 my_append_raw = True
                 wtcube_o = SpectralCube(
                     cube.mask.include().astype('float'),
-                    cube.wcs, beam=cube.beam)
+                    cube.wcs, beam=cube.beam).with_mask(
+                        np.ones(cube.shape).astype('?'))
+                wtcube_o.allow_huge_operations = (
+                    cube.allow_huge_operations)
                 wtcube = wtcube_o.convolve_to(
                     newbeam_small, convolve=convolve_func)
                 newcubesq = convcubesq / wtcube.unmasked_data[:]
@@ -188,10 +195,10 @@ def convolve_cube(cube, newbeam, mode='datacube',
         return newcube
 
 
-def calc_noise_in_cube(cube, masking_scheme='simple', mask=None,
-                       spatial_average_npix=None,
-                       spatial_average_nbeam=5.0,
-                       spectral_average_nchan=5, verbose=False):
+def calc_noise_in_cube(
+        cube, masking_scheme='simple', mask=None,
+        spatial_average_npix=None, spatial_average_nbeam=5.0,
+        spectral_average_nchan=5, verbose=False):
     """
     Estimate rms noise in a (continuum-subtracted) spectral cube.
 
@@ -225,9 +232,6 @@ def calc_noise_in_cube(cube, masking_scheme='simple', mask=None,
     rmscube : SpectralCube object
         Spectral cube containing the rms noise at each ppv location
     """
-
-    from scipy.ndimage import generic_filter
-    from astropy.stats import mad_std
 
     if masking_scheme not in ['simple', 'user']:
         raise ValueError("'masking_scheme' should be specified as"
@@ -287,9 +291,9 @@ def calc_noise_in_cube(cube, masking_scheme='simple', mask=None,
     # create rms noise cube from the tensor product of rms_v and rms_s
     if verbose:
         print("Creating rms noise cube (direct tensor product)...")
-    rmscube = SpectralCube(np.einsum('i,jk', rms_v, rms_s),
-                           wcs=cube.wcs,
-                           header=cube.header.copy(strip=True))
+    rmscube = SpectralCube(
+        np.einsum('i,jk', rms_v, rms_s), wcs=cube.wcs,
+        header=cube.header.copy()).with_mask(cube.mask.include())
     rmscube.allow_huge_operations = cube.allow_huge_operations
     # correct the normalization of the rms cube
     if masking_scheme == 'user':
@@ -303,9 +307,6 @@ def calc_noise_in_cube(cube, masking_scheme='simple', mask=None,
     rms_n = cube.with_mask(mask_n).mad_std().value
     rmscube /= rms_n
 
-    # apply NaN mask
-    rmscube = rmscube.with_mask(cube.mask.include())
-
     # check unit
     if rmscube.unit != cube.unit:
         rmscube = rmscube * (cube.unit / rmscube.unit)
@@ -313,11 +314,12 @@ def calc_noise_in_cube(cube, masking_scheme='simple', mask=None,
     return rmscube
     
 
-def find_signal_in_cube(cube, noisecube, mask=None,
-                        nchan_hi=3, snr_hi=3.5, nchan_lo=2, snr_lo=2,
-                        prune_by_npix=None, prune_by_fracbeam=1.,
-                        expand_by_npix=None, expand_by_fracbeam=0.,
-                        expand_by_nchan=2, verbose=False):
+def find_signal_in_cube(
+        cube, noisecube, mask=None,
+        nchan_hi=3, snr_hi=3.5, nchan_lo=2, snr_lo=2,
+        prune_by_npix=None, prune_by_fracbeam=1.,
+        expand_by_npix=None, expand_by_fracbeam=0.,
+        expand_by_nchan=2, verbose=False):
     """
     Identify (positive) signal in a cube based on S/N ratio.
 
@@ -394,8 +396,6 @@ def find_signal_in_cube(cube, noisecube, mask=None,
     outcube : SpectralCube object
         Input cube masked by the generated 'signal mask'.
     """
-
-    from scipy.ndimage import binary_dilation, label
 
     if not cube.unit.is_equivalent(noisecube.unit):
         raise ValueError("Incompatable units between 'cube' and "
@@ -501,8 +501,6 @@ def calc_channel_corr(cube, mask=None):
     p-value : float
         Two-tailed p-value
     """
-    from scipy.stats import pearsonr
-
     if mask is None:
         mask = cube.mask.include()
     mask &= np.roll(mask, -1, axis=0)
@@ -512,9 +510,9 @@ def calc_channel_corr(cube, mask=None):
                     cube.filled_data[np.roll(mask, 1, axis=0)])
 
 
-def convolve_projection(proj, newbeam, res_tol=0.0, min_coverage=0.8,
-                        append_raw=False, verbose=False,
-                        suppress_error=False):
+def convolve_projection(
+        proj, newbeam, res_tol=0.0, min_coverage=0.8,
+        append_raw=False, verbose=False, suppress_error=False):
     """
     Convolve a 2D image to a specified beam.
 
@@ -559,9 +557,6 @@ def convolve_projection(proj, newbeam, res_tol=0.0, min_coverage=0.8,
         Convolved 2D image (when append_raw=False), or a tuple
         comprising 3 images (when append_raw=True)
     """
-
-    from functools import partial
-    from astropy.convolution import convolve_fft
 
     if min_coverage is None:
         # Skip coverage check and preserve NaN values.

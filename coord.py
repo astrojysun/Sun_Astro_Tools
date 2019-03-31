@@ -1,5 +1,5 @@
-from __future__ import (division, print_function, absolute_import,
-                        unicode_literals)
+from __future__ import (
+    division, print_function, absolute_import, unicode_literals)
 
 import numpy as np
 import astropy.units as u

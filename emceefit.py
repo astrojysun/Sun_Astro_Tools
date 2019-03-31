@@ -1,8 +1,11 @@
-from __future__ import (division, print_function, absolute_import,
-                        unicode_literals)
+from __future__ import (
+    division, print_function, absolute_import, unicode_literals)
 
 import numpy as np
-
+import scipy.optimize as op
+from scipy.stats import norm
+from scipy.integrate import dblquad
+from emcee import EnsembleSampler
 from .stats import gaussNd_pdf
 
 
@@ -18,9 +21,6 @@ def modelfit_emcee(lnpost, guess, skip_minimize=False,
     """
     Interface for MCMC model fitting.
     """
-    import scipy.optimize as op
-    from emcee import EnsembleSampler
-
     # input parameter check
     if not np.isfinite(lnpost(guess, **kwargs)):
         raise ValueError("Zero posterior probability for `guess`!")
@@ -28,8 +28,8 @@ def modelfit_emcee(lnpost, guess, skip_minimize=False,
 
     # find maximum posterior solution
     if not skip_minimize:
-        nlp = lambda *args: -lnpost(*args, **kwargs)
-        start = op.minimize(nlp, guess)['x']
+        start = op.minimize(
+            lambda *args: -lnpost(*args, **kwargs), guess)['x']
         if verbose:
             print("MAP solution found.")
     else:
@@ -94,8 +94,6 @@ def lnpost_line(params, data=None, cov=None, intrinsic_scatter='none',
     """
     Natural logarithm of the posterior probability of a line model.
     """
-    from scipy.stats import norm
-
     if lnprior is None:
         lnprior = lnprior_flat
     lnpr = lnprior(params, *priorargs)
@@ -176,8 +174,6 @@ def lnpost2D_censored(params, lnpost_func=None,
 
     if bounds is None or np.isinf(lnpost):
         return lnpost
-
-    from scipy.integrate import dblquad
 
     xmin, xmax, ymin, ymax = bounds
     if callable(ymin):

@@ -1,7 +1,8 @@
-from __future__ import (division, print_function, absolute_import,
-                        unicode_literals)
+from __future__ import (
+    division, print_function, absolute_import, unicode_literals)
 
 import numpy as np
+from corner import corner
 
 
 def easy_corner(chain, range=None, bins=50, smooth=2,
@@ -31,7 +32,6 @@ def easy_corner(chain, range=None, bins=50, smooth=2,
     -------
     fig : `~matplotlib.figure.Figure` object
     """
-    from corner import corner
     nsamples, ndim = np.shape(chain)
     if range is None:
         range = [0.95] * ndim

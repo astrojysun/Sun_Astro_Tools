@@ -1,7 +1,34 @@
-from __future__ import (division, print_function, absolute_import,
-                        unicode_literals)
+from __future__ import (
+    division, print_function, absolute_import, unicode_literals)
 
 import numpy as np
+from scipy.stats import binned_statistic
+
+
+def running_mean(x, y, xbins):
+    """
+    Compute the mean value of y for all data points in each x-bin.
+
+    This is a simple wrapper around `scipy.stats.binned_statistic`,
+    tuned to handle NaN values.
+
+    Parameters
+    ----------
+    x : array_like
+        x values of all data points
+    y : array_like
+        y values of all data points
+    xbins : array_like
+        Bin edges, including the rightmost edge
+
+    Returns
+    -------
+    means : numpy array
+        Mean values of y in every x-bin.
+    """
+    return binned_statistic(
+        np.atleast_1d(x).ravel(), np.atleast_1d(y).ravel(),
+        bins=xbins, statistic=np.nanmean)[0]
 
 
 def running_percentile(x, y, xbins, q):
