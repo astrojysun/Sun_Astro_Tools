@@ -107,14 +107,31 @@ def convolve_cube(
         except ValueError as err:
             if suppress_error:
                 if verbose:
-                    print("{}\nOld: {}\nNew: {}"
-                          "".format(err, cube.beam, newbeam))
+                    print(
+                        "{}\n"
+                        "Old:  {:.3g} x {:.3g}  PA = {:.1f}\n"
+                        "New:  {:.3g} x {:.3g}  PA = {:.1f}".format(
+                            err,
+                            cube.beam.major.to('arcsec'),
+                            cube.beam.minor.to('arcsec'),
+                            cube.beam.pa.to('deg'),
+                            newbeam.major.to('arcsec'),
+                            newbeam.minor.to('arcsec'),
+                            newbeam.pa.to('deg')))
                     print("Exiting...")
                 return
             else:
                 raise ValueError(
-                    "{}\nOld: {}\nNew: {}"
-                    "".format(err, cube.beam, newbeam))
+                    "{}\n"
+                    "Old:  {:.3g} x {:.3g}  PA = {:.1f}\n"
+                    "New:  {:.3g} x {:.3g}  PA = {:.1f}".format(
+                        err,
+                        cube.beam.major.to('arcsec'),
+                        cube.beam.minor.to('arcsec'),
+                        cube.beam.pa.to('deg'),
+                        newbeam.major.to('arcsec'),
+                        newbeam.minor.to('arcsec'),
+                        newbeam.pa.to('deg')))
         if verbose:
             print("Convolving cube...")
         if mode == 'datacube':
