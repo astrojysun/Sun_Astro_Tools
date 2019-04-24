@@ -6,7 +6,6 @@ import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
 from reproject import reproject_interp
-from spectral_cube import SpectralCube, Projection
 
 
 def clean_header(hdr, remove_keys=[], keep_keys=[]):
