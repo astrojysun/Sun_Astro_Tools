@@ -6,8 +6,6 @@ import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
 from reproject import reproject_interp
-from spectral_cube import SpectralCube, Projection
-from .cube import convolve_projection, convolve_cube
 
 
 def clean_header(hdr, remove_keys=[], keep_keys=[]):
@@ -118,67 +116,3 @@ def regrid_image_hdu(inhdu, newhdr, keep_header_keys=[],
     newhdu = inhdu.__class__(data_proj, hdr)
     
     return newhdu
-
-
-def convolve_image_hdu(inhdu, newbeam, append_raw=False,
-                       allow_huge_operations=True, **kwargs):
-    """
-    Convolve a FITS image HDU (2D or 3D) to a specified beam.
-
-    This is a simple wrapper around `.cube.convolve_cube` and
-    `.cube.convolve_projection`
-
-    Parameters
-    ----------
-    inhdu : FITS HDU object
-        Input FITS HDU
-    newbeam : radio_beam.Beam object
-        Target beam to convolve to
-    append_raw : bool, optional
-        Whether to append the raw convolved image and weight image
-        Default is not to append.
-    allow_huge_operations : bool optional
-        Whether to set cube.allow_huge_operations=True
-        Default is True.
-    **kwargs
-        Keywords to be passed to either `.cube.convolve_cube`
-        or `.cube.convolve_projection`
-
-    Returns
-    -------
-    outhdu : FITS HDU or HDUList object
-        Convolved HDU (when append_raw=False), or HDUList comprising
-        3 HDUs (when append_raw=True)
-    """
-    naxis = inhdu.header['NAXIS']
-    if naxis < 2 or naxis >= 4:
-        raise ValueError("Cannot handle input HDU with NAXIS={}"
-                         "".format(inhdu.header['NAIXS']))
-    if naxis == 2:
-        oldimg = Projection.from_hdu(inhdu)
-        newimg = convolve_projection(
-            oldimg, newbeam, append_raw=append_raw, **kwargs)
-    else:
-        oldimg = SpectralCube(
-            inhdu.data, wcs=WCS(inhdu.header), header=inhdu.header)
-        oldimg = oldimg.with_mask(np.isfinite(inhdu.data))
-        oldimg.allow_huge_operations = allow_huge_operations
-        newimg = convolve_cube(
-            oldimg, newbeam, append_raw=append_raw, **kwargs)
-    if newimg is None:
-        return
-    newhdr = inhdu.header.copy(strip=True)
-    newhdr.remove('WCSAXES', ignore_missing=True)
-    if not append_raw:
-        for key in ['BMAJ', 'BMIN', 'BPA']:
-            newhdr[key] = newimg.header[key]
-        newhdu = fits.PrimaryHDU(newimg.hdu.data, newhdr)
-        return newhdu
-    else:
-        for key in ['BMAJ', 'BMIN', 'BPA']:
-            newhdr[key] = newimg[0].header[key]
-        newhdu = fits.PrimaryHDU(newimg[0].hdu.data, newhdr)
-        convhdu = fits.ImageHDU(newimg[1].hdu.data, newhdr)
-        newhdr.remove('BUNIT', ignore_missing=True)
-        wthdu = fits.ImageHDU(newimg[2].hdu.data, newhdr)
-        return fits.HDUList([newhdu, convhdu, wthdu])
