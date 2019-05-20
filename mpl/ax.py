@@ -7,6 +7,59 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 
+def scatterplot_w_common_edge(
+        x, y,
+        facecolor='w', edgecolor='k', markersize=1, edgewidth=0.5,
+        facezorder=None, edgezorder=2, marker='o',
+        label=None, ax=None, **kwargs):
+    """
+    Make a scatter plot with overlapping points sharing a common edge.
+
+    Parameters
+    ----------
+    x, y : array_like
+        x & y coordinates of the data points
+    facecolor : color, optional
+        Default: 'w'
+    edgecolor : color, optional
+        Default: 'k'
+    markersize : float, optional
+        Linear size. Default: 1
+    edgewidth : float, optional
+        Default: 0.5
+    facezorder : float, optional
+        Default: edgezorder + 0.01
+    edgezorder : float, optional
+        Default: 2
+    marker : marker style
+        Default: 'o'
+    label : string, optional
+        Default: None
+    **kwargs
+        Keywords to be passed to `~matplotlib.pyplot.scatter`
+    
+    Returns
+    -------
+    ax : `~matplotlib.axes.Axes` object
+        The Axes object in which contours are plotted.
+    """
+    if ax is None:
+        ax = plt.subplot(111)
+    if facezorder is None:
+        facezorder = edgezorder + 0.01
+    ax.scatter(
+        x, y, marker=marker, c=edgecolor, s=(markersize+edgewidth)**2,
+        linewidths=0, zorder=edgezorder, **kwargs)
+    ax.scatter(
+        x, y, marker=marker, c=facecolor, s=(markersize-edgewidth)**2,
+        linewidths=0, zorder=facezorder, **kwargs)
+    if label is not None:
+        ax.plot(
+            [], [], marker=marker, mfc=facecolor, mec=edgecolor,
+            ms=markersize, mew=edgewidth, ls='', label=label)
+    return ax
+
+
 def log_contourplot(
         x, y, weight_by=None, xlim=None, ylim=None,
         overscan=(0.1, 0.1), logbin=(0.02, 0.02), smooth_nbin=(3, 3),
@@ -18,7 +71,7 @@ def log_contourplot(
     Parameters
     ----------
     x, y : array_like
-        x & y coordiantes of the data points
+        x & y coordinates of the data points
     weight_by : {None, 'x', 'y', function object}, optional
         Weight applied to the data density in each x-y bin.
         Uniform weight (weight_by=None) is used by default.
@@ -75,7 +128,7 @@ def log_contourplot(
                 10**(np.nanmax(np.log10(y))+overscan[1]))
 
     if ax is None:
-        ax = plt.axes([0.02, 0.08, 0.96, 0.90])
+        ax = plt.subplot(111)
         ax.set_xlim(xlim)
         ax.set_ylim(ylim)
 
@@ -201,7 +254,7 @@ def minimal_barplot(
                          "('top', 'bottom')")
 
     if ax is None:
-        ax = plt.axes([0.02, 0.08, 0.96, 0.90])
+        ax = plt.subplot(111)
     lw = 0.
     ibar = -1
     for ibar in range(nlim // 2):
