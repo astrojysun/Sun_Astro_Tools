@@ -10,8 +10,8 @@ import matplotlib.pyplot as plt
 def log_contourplot(
         x, y, weight_by=None, xlim=None, ylim=None,
         overscan=(0.1, 0.1), logbin=(0.02, 0.02), smooth_nbin=(3, 3),
-        levels=(0., 0.393, 0.865, 0.989), alphas=(0.75, 0.50, 0.25),
-        color='k', ax=None, **contourfkw):
+        levels=(0.393, 0.865, 0.989), alphas=(0.75, 0.50, 0.25),
+        color='k', contour_type='contourf', ax=None, **contourkw):
     """
     Generate data density contours in log-log space.
 
@@ -44,7 +44,7 @@ def log_contourplot(
         To be passed to `~scipy.ndimage.gaussian_filter`
     levels : array_like, optional
         Contour levels to be plotted, specified as levels in CDF.
-        By default levels=(0., 0.393, 0.865, 0.989), which corresponds
+        By default levels=(0.393, 0.865, 0.989), which corresponds
         to the integral of a 2D normal distribution within 1-sigma,
         2-sigma, and 3-sigma range (i.e., Mahalanobis distance).
         Note that for an N-level contour plot, 'levels' must have
@@ -53,10 +53,13 @@ def log_contourplot(
         Transparancy of the contours. Default: (0.75, 0.50, 0.25)
     color : mpl color, optional
         Base color of the contours. Default: 'k'
+    contour_type : {'contour', 'contourf'}, optional
+        Contour drawing function to call
     ax : `~matplotlib.axes.Axes` object, optional
         The Axes object to plot contours in.
-    **contourfkw
-        Keywords to be passed to `~matplotlib.pyplot.contourf`.
+    **contourkw
+        Keywords to be passed to the contour drawing function
+        (see keyword "contour_type")
 
     Returns
     -------
@@ -108,10 +111,19 @@ def log_contourplot(
     cdf = (cdf/cdf.max()).reshape(pdf.shape)
 
     # plot contourf
-    ax.contourf(
-        xmids, ymids, cdf, levels,
-        colors=[mpl.colors.to_rgba(color,a) for a in alphas],
-        **contourfkw)
+    if contour_type == 'contour':
+        contourfunc = ax.contour
+        contourlevels = levels
+    elif contour_type == 'contourf':
+        contourfunc = ax.contourf
+        contourlevels = np.hstack([[0], levels])
+    else:
+        raise ValueError(
+            "'contour_type' should be either 'contour' or 'contourf'")
+    contourfunc(
+        xmids, ymids, cdf, contourlevels,
+        colors=[mpl.colors.to_rgba(color, a) for a in alphas],
+        **contourkw)
     
     return ax
 
