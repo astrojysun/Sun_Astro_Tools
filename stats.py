@@ -64,6 +64,77 @@ def running_percentile(x, y, xbins, q):
     return percentiles
 
 
+def OLS_fitter(x, y, method='OLS (Y|X)', weight=None):
+    """
+    Simple ordinary least square (OLS) fitter.
+
+    This regression method should only be used when the measurement
+    uncertainties on both X and Y are negligible compared to the
+    intrinsic scatter about the true, linear relation between them.
+
+    This function supports multiple OLS regression methods:
+    - 'OLS (Y|X)':
+        The standard OLS regression of Y on X (i.e., treating X as the
+        independent variable)
+    - 'OLS (X|Y)':
+        OLS regression of X on Y (i.e., treating Y as the independent
+        variable)
+    - 'OLS bisector':
+        The bisector of the OLS (Y|X) line and the OLS (X|Y) line
+
+    Parameters
+    ----------
+    x : array_like
+        An array of x values
+    y : array_like
+        An array of y values, of the sample length as x.
+    method : {'OLS (Y|X)', 'OLS (X|Y)', 'OLS bisector'}, optional
+        OLS regression methods (see description above)
+        Default is 'OLS (Y|X)'
+    weight : array_like, optional
+        An array of weights, of the same length as x.
+
+    Returns
+    -------
+    beta : float
+        Slope of the OLS regression line
+    alpha : float
+        Intercept of the OLS regression line
+    """
+    if ~(np.isfinite(x).all()) or ~(np.isfinite(y).all()):
+        raise ValueError("Input variables contain NaN or Inf")
+    if len(x) != len(y):
+        raise ValueError("Input variables have different lengths")
+    if weight is None:
+        w = np.ones_like(x).astype('float')
+        w_tot = w.sum()
+    else:
+        w = weight.reshape(x.ravel().shape)
+        w_tot = w.sum()
+        if ~(np.isfinite(w).all()) or ~((w >= 0).all()) or w_tot == 0:
+            raise ValueError(
+                "Weight contains NaN, Inf, negative value, "
+                "or all zeros")
+    x_mean = (x.ravel() * w).sum() / w_tot
+    y_mean = (y.ravel() * w).sum() / w_tot
+    S_matrix = np.cov(
+        x.ravel(), y.ravel(), ddof=0, aweights=w) * w_tot
+    beta1 = S_matrix[0, 1] / S_matrix[0, 0]
+    beta2 = S_matrix[1, 1] / S_matrix[0, 1]
+    if method == 'OLS (Y|X)':
+        beta = beta1
+    elif method == 'OLS (X|Y)':
+        beta = beta2
+    elif method == 'OLS bisector':
+        beta = ((beta1*beta2 - 1 +
+                 np.sqrt((1+beta1**2)*(1+beta2**2))) /
+                (beta1 + beta2))
+    else:
+        raise ValueError("Unknown fitting method: {}".format(method))
+    alpha = y_mean - beta * x_mean
+    return beta, alpha
+
+
 def gaussNd_pdf(x, norm=1., mean=0., cov_matrix=None,
                 return_log=False):
     """
