@@ -3,6 +3,57 @@ from __future__ import (
 
 import numpy as np
 from scipy.stats import binned_statistic
+from scipy.interpolate import interp1d
+
+
+def weighted_percentile(
+        a, q, weight=None, assume_sorted=False,
+        interp_kind='nearest', **kwargs):
+    """
+    Compute the weighted q-th percentile of the data.
+
+    Parameters
+    ----------
+    a : array_like
+        Input array or object that can be converted to an array.
+    q : array_like
+        Percentile or sequence of percentiles to compute,
+        which must be between 0 and 100 inclusive.
+    weight : array_like, optional
+        An array of weights, of the same length as x.
+    assume_sorted : bool, optional
+        If False (default), values in the input data array can be in
+        any order and will be sorted first. Otherwise they have to be
+        monotonically increasing.
+    interp_kind : str or int, optional
+        The kind of interpolation (default: 'nearest').
+        See the documentation of `~scipy.interpolate.interp1d`.
+    **kwargs
+        Keywords to be passed to `~scipy.interpolate.interp1d`
+
+    Returns
+    -------
+    percentile : scalar or ndarray
+        If q is a single percentile, a scalar will be returned;
+        If multiple percentiles are given, an array will be returned.
+    """
+    data = np.array(a).astype(float)
+    if weight is None:
+        w = np.ones_like(data)
+    else:
+        w = np.array(weight).astype(float)
+    if not assume_sorted:
+        ind = np.argsort(data)
+        data = data[ind]
+        w = w[ind]
+    
+    pdf = w / np.sum(w)
+    cdf = np.cumsum(pdf) - pdf/2
+    f = interp1d(
+        cdf, data, kind=interp_kind, assume_sorted=True,
+        bounds_error=False, fill_value=(data[0], data[-1]))
+    
+    return f(np.array(q).astype(float)/1e2)
 
 
 def running_mean(x, y, xbins):
