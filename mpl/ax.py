@@ -5,36 +5,51 @@ import numpy as np
 from scipy.ndimage import gaussian_filter
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from astropy.utils.console import ProgressBar
 
 
-def scatterplot_w_common_edge(
-        x, y,
-        facecolor='w', edgecolor='k', markersize=1, edgewidth=0.5,
-        facezorder=None, edgezorder=2, marker='o',
-        label=None, ax=None, **kwargs):
+def dense_scatter(
+        x, y, ax=None, zorder=None, label=None,
+        marker='o', markersize=1., edgewidth=0.,
+        c='w', color_smoothing_box=None, edgecolor='k',
+        show_progress=False, **kwargs):
     """
-    Make a scatter plot with overlapping points sharing a common edge.
+    Scatter plot with significant overlapping between data points.
+
+    This function attempts to make a dense scatter plot prettier by:
+    + merging the 'marker edges' of overlapping data points;
+    + running a median-filter to homogenize the color of neighbouring
+      data points (criterion of 'neighbouring' given by user).
+
+    Note that the color smoothing functionality only works with
+    log-log plots (for now).
 
     Parameters
     ----------
     x, y : array_like
         x & y coordinates of the data points
-    facecolor : color, optional
-        Default: 'w'
-    edgecolor : color, optional
-        Default: 'k'
-    markersize : float, optional
-        Linear size. Default: 1
-    edgewidth : float, optional
-        Default: 0.5
-    facezorder : float, optional
-        Default: edgezorder + 0.01
-    edgezorder : float, optional
-        Default: 2
+    ax : `~matplotlib.axes.Axes` object, optional
+        The Axes object in which to draw the scatter plot.
+    zorder : float, optional
+    label : string, optional
+        Text label to use in the legend
+        (ignored if facecolor is not a scalar)
     marker : marker style
         Default: 'o'
-    label : string, optional
-        Default: None
+    markersize : float, optional
+        Default: 1.
+    edgewidth : float, optional
+        Default: 0.
+    c : color or array-like, optional
+        Default: 'w'
+    color_smoothing_box : None or 2-tuple, optional
+        If None, then no color smoothing will be performed.
+        If a 2-tuple, then this parameter specifies the half width
+        of the color smoothing box along X and Y direction (in dex).
+    edgecolor : color, optional
+        Default: 'k'
+    show_progress : bool, optional
+        Whether to show the progress bar for color smoothing.
     **kwargs
         Keywords to be passed to `~matplotlib.pyplot.scatter`
     
@@ -45,22 +60,45 @@ def scatterplot_w_common_edge(
     """
     if ax is None:
         ax = plt.subplot(111)
-    if facezorder is None:
-        facezorder = edgezorder + 0.01
-    ax.scatter(
-        x, y, marker=marker, c=edgecolor, s=(markersize+edgewidth)**2,
-        linewidths=0, zorder=edgezorder, **kwargs)
-    ax.scatter(
-        x, y, marker=marker, c=facecolor, s=(markersize-edgewidth)**2,
-        linewidths=0, zorder=facezorder, **kwargs)
+
+    if (color_smoothing_box is not None) and (np.size(c) > 1):
+        rx, ry = 10**np.array(color_smoothing_box)
+        if show_progress:
+            newc = [np.nanmedian(c[(x > x[i]/rx) & (x < x[i]*rx) &
+                                   (y > y[i]/ry) & (y < y[i]*ry)])
+                    for i in ProgressBar(range(len(x)))]
+        else:
+            newc = [np.nanmedian(c[(x > x0/rx) & (x < x0*rx) &
+                                   (y > y0/ry) & (y < y0*ry)])
+                    for (x0, y0) in zip(x, y)]
+    else:
+        newc = c
+
+    if edgewidth == 0:
+        ax.scatter(
+            x, y, marker=marker, c=newc, s=markersize**2,
+            linewidths=0, zorder=zorder, **kwargs)
+    else:
+        ax.scatter(
+            x, y, marker=marker, c=edgecolor,
+            s=(markersize+edgewidth)**2,
+            linewidths=0, zorder=zorder, **kwargs)
+        ax.scatter(
+            x, y, marker=marker, c=newc,
+            s=(markersize-edgewidth)**2,
+            linewidths=0, zorder=zorder, **kwargs)
     if label is not None:
-        ax.plot(
-            [], [], marker=marker, mfc=facecolor, mec=edgecolor,
-            ms=markersize, mew=edgewidth, ls='', label=label)
+        if np.size(c) > 1:
+            print("Unable to add legend entry: "
+                  "`c` is not a scalar")
+        else:
+            ax.plot(
+                [], [], marker=marker, mfc=c, mec=edgecolor,
+                ms=markersize, mew=edgewidth, ls='', label=label)
     return ax
 
 
-def log_contourplot(
+def log_contour(
         x, y, weight_by=None, xlim=None, ylim=None,
         overscan=(0.1, 0.1), logbin=(0.02, 0.02), smooth_nbin=(3, 3),
         levels=(0.393, 0.865, 0.989), alphas=(0.75, 0.50, 0.25),
