@@ -14,7 +14,7 @@ def dense_scatter(
         c='w', color_smoothing_box=None, edgecolor='k',
         show_progress=False, **kwargs):
     """
-    Scatter plot with significant overlapping between data points.
+    Make scatter plots that handle overlapping data points better.
 
     This function attempts to make a dense scatter plot prettier by:
     + merging the 'marker edges' of overlapping data points;
@@ -98,39 +98,38 @@ def dense_scatter(
     return ax
 
 
-def log_contour(
-        x, y, weight_by=None, xlim=None, ylim=None,
+def density_contour(
+        x, y, weights=None, xlim=None, ylim=None,
         overscan=(0.1, 0.1), logbin=(0.02, 0.02), smooth_nbin=(3, 3),
         levels=(0.393, 0.865, 0.989), alphas=(0.75, 0.50, 0.25),
         color='k', contour_type='contourf', ax=None, **contourkw):
     """
-    Generate data density contours in log-log space.
+    Generate data density contours (in log-log space).
 
     Parameters
     ----------
     x, y : array_like
         x & y coordinates of the data points
-    weight_by : {None, 'x', 'y', function object}, optional
-        Weight applied to the data density in each x-y bin.
-        Uniform weight (weight_by=None) is used by default.
-        Other options include weighting by 'x', 'y', or a
-        function that takes x & y as arguments and calculate
-        the weight at each x-y location.
+    weights : array_like, optional
+        Statistical weight on each data point.
+        If None (default), uniform weight is applied.
+        If not None, this should be an array of weights,
+        with its shape matching `x` and `y`.
     xlim, ylim : array_like, optional
         Range to calculate and generate contour.
         Default is to use a range wider than the data range
         by a factor of F on both sides, where F is specified by
         the keyword 'overscan'.
-    overscan : array_like (2 elements), optional
+    overscan : array_like (length=2), optional
         Factor by which 'xlim' and 'ylim' are wider than
         the data range on both sides. Default is 0.1 dex wider,
         meaning that xlim = (Min(x) / 10**0.1, Max(x) * 10**0.1),
         and the same case for ylim.
-    logbin : array_like (2 elements), optional
+    logbin : array_like (length=2), optional
         Bin widths (in dex) used for generating the 2D histogram.
         Usually the default value (0.02 dex) is enough, but it
         might need to be higher for complex distribution shape.
-    smooth_nbin : array_like (2 elements), optional
+    smooth_nbin : array_like (length=2), optional
         Number of bins to smooth over along x & y direction.
         To be passed to `~scipy.ndimage.gaussian_filter`
     levels : array_like, optional
@@ -179,19 +178,17 @@ def log_contour(
         np.log10(xlim)[0], np.log10(xlim)[1]+logbin[0], logbin[0])
     lyedges = np.arange(
         np.log10(ylim)[0], np.log10(ylim)[1]+logbin[1], logbin[1])
-    hist, lxedges, lyedges = np.histogram2d(
-        np.log10(x), np.log10(y), bins=[lxedges, lyedges])
+    if weights is None:
+        hist, lxedges, lyedges = np.histogram2d(
+            np.log10(x), np.log10(y),
+            bins=[lxedges, lyedges])
+    else:
+        hist, lxedges, lyedges = np.histogram2d(
+            np.log10(x), np.log10(y), weights=weights,
+            bins=[lxedges, lyedges])
     xmids = 10**(lxedges[:-1] + 0.5*logbin[0])
     ymids = 10**(lyedges[:-1] + 0.5*logbin[1])
     
-    # weight 2D histogram
-    if weight_by == 'x':
-        hist *= xmids.reshape(-1, 1)
-    elif weight_by == 'y':
-        hist *= ymids
-    elif weight_by is not None:
-        hist *= weight_by(xmids.reshape(-1, 1), ymids)
-
     # smooth 2D histogram
     pdf = gaussian_filter(hist, smooth_nbin).T
     
