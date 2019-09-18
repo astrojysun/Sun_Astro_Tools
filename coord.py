@@ -28,7 +28,7 @@ def deproject(center_coord=None, incl=0*u.deg, pa=0*u.deg,
 
     Parameters
     ----------
-    center_coord : `~astropy.coordinates.SkyCoord` object or array-like
+    center_coord : `~astropy.coordinates.SkyCoord` object or 2-tuple
         Sky coordinates of the disk center
     incl : `~astropy.units.Quantity` object or number, optional
         Inclination angle of the disk (0 degree means face-on)

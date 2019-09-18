@@ -2,13 +2,15 @@ from __future__ import (
     division, print_function, absolute_import, unicode_literals)
 
 import re
+import warnings
 import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
 from reproject import reproject_interp
 
 
-def clean_header(hdr, remove_keys=[], keep_keys=[]):
+def clean_header(hdr, remove_keys=[], keep_keys=[],
+                 simplify_scale_matrix=True):
     """
     Clean a fits header and retain only the necessary keywords.
 
@@ -16,14 +18,16 @@ def clean_header(hdr, remove_keys=[], keep_keys=[]):
     ----------
     hdr : fits header object
         Header object to be cleaned
-    remove_keys : {'3D', '2D', 'celestial', iterable}
+    remove_keys : {'3D', '2D', 'celestial', iterable}, optional
         List of keys to remove before feeding the header to WCS
         If set to '3D', remove keys irrelevant to 3D data cubes;
         if set to '2D', remove keys irrelevant to 2D images;
         if set to 'celestial', remove keys irrelevant to the
         celestial coordinate frame.
-    keep_keys : iterable
+    keep_keys : iterable, optional
         List of keys to keep
+    simplify_scale_matrix : bool, optional
+        Whether to reduce CD or PC matrix if possible (default: True)
 
     Returns
     -------
@@ -71,7 +75,20 @@ def clean_header(hdr, remove_keys=[], keep_keys=[]):
         rmkeys = (remove_keys +
                   ['WCSAXES', 'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z',
                    'OBS-RA', 'OBS-DEC', 'MJD-OBS', 'DATE-OBS'])
-    newhdr = WCS(newhdr).to_header()
+    newwcs = WCS(newhdr)
+    if simplify_scale_matrix:
+        # simplify pixel scale matrix
+        mask = ~np.eye(newwcs.pixel_scale_matrix.shape[0]).astype('?')
+        if not any(newwcs.pixel_scale_matrix[mask]):
+            cdelt = newwcs.pixel_scale_matrix.diagonal()
+            del newwcs.wcs.pc
+            del newwcs.wcs.cd
+            newwcs.wcs.cdelt = cdelt
+        else:
+            warnings.warn("WCS pixel scale matrix has non-zero "
+                          "off-diagonal elements. 'CDELT' keywords "
+                          "might not reflect actual pixel size.")
+    newhdr = newwcs.to_header()
     newhdr.remove('WCSAXES')
     for key in keep_keys:
         if key in hdr:

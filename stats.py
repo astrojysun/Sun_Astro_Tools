@@ -3,6 +3,57 @@ from __future__ import (
 
 import numpy as np
 from scipy.stats import binned_statistic
+from scipy.interpolate import interp1d
+
+
+def weighted_percentile(
+        a, q, weight=None, assume_sorted=False,
+        interp_kind='nearest', **kwargs):
+    """
+    Compute the weighted q-th percentile of the data.
+
+    Parameters
+    ----------
+    a : array_like
+        Input array or object that can be converted to an array.
+    q : array_like
+        Percentile or sequence of percentiles to compute,
+        which must be between 0 and 100 inclusive.
+    weight : array_like, optional
+        An array of weights, of the same length as x.
+    assume_sorted : bool, optional
+        If False (default), values in the input data array can be in
+        any order and will be sorted first. Otherwise they have to be
+        monotonically increasing.
+    interp_kind : str or int, optional
+        The kind of interpolation (default: 'nearest').
+        See the documentation of `~scipy.interpolate.interp1d`.
+    **kwargs
+        Keywords to be passed to `~scipy.interpolate.interp1d`
+
+    Returns
+    -------
+    percentile : scalar or ndarray
+        If q is a single percentile, a scalar will be returned;
+        If multiple percentiles are given, an array will be returned.
+    """
+    data = np.array(a).astype(float)
+    if weight is None:
+        w = np.ones_like(data)
+    else:
+        w = np.array(weight).astype(float)
+    if not assume_sorted:
+        ind = np.argsort(data)
+        data = data[ind]
+        w = w[ind]
+    
+    pdf = w / np.sum(w)
+    cdf = np.cumsum(pdf) - pdf/2
+    f = interp1d(
+        cdf, data, kind=interp_kind, assume_sorted=True,
+        bounds_error=False, fill_value=(data[0], data[-1]))
+    
+    return f(np.array(q).astype(float)/1e2)
 
 
 def running_mean(x, y, xbins):
@@ -62,6 +113,77 @@ def running_percentile(x, y, xbins, q):
         yinbin = y[mask]
         percentiles[:, ibin] = np.percentile(yinbin, q)
     return percentiles
+
+
+def OLS_fitter(x, y, method='OLS (Y|X)', weight=None):
+    """
+    Simple ordinary least square (OLS) fitter.
+
+    This regression method should only be used when the measurement
+    uncertainties on both X and Y are negligible compared to the
+    intrinsic scatter about the true, linear relation between them.
+
+    This function supports multiple OLS regression methods:
+    - 'OLS (Y|X)':
+        The standard OLS regression of Y on X (i.e., treating X as the
+        independent variable)
+    - 'OLS (X|Y)':
+        OLS regression of X on Y (i.e., treating Y as the independent
+        variable)
+    - 'OLS bisector':
+        The bisector of the OLS (Y|X) line and the OLS (X|Y) line
+
+    Parameters
+    ----------
+    x : array_like
+        An array of x values
+    y : array_like
+        An array of y values, of the sample length as x.
+    method : {'OLS (Y|X)', 'OLS (X|Y)', 'OLS bisector'}, optional
+        OLS regression methods (see description above)
+        Default is 'OLS (Y|X)'
+    weight : array_like, optional
+        An array of weights, of the same length as x.
+
+    Returns
+    -------
+    beta : float
+        Slope of the OLS regression line
+    alpha : float
+        Intercept of the OLS regression line
+    """
+    if ~(np.isfinite(x).all()) or ~(np.isfinite(y).all()):
+        raise ValueError("Input variables contain NaN or Inf")
+    if len(x) != len(y):
+        raise ValueError("Input variables have different lengths")
+    if weight is None:
+        w = np.ones_like(x).astype('float')
+        w_tot = w.sum()
+    else:
+        w = weight.reshape(x.ravel().shape)
+        w_tot = w.sum()
+        if ~(np.isfinite(w).all()) or ~((w >= 0).all()) or w_tot == 0:
+            raise ValueError(
+                "Weight contains NaN, Inf, negative value, "
+                "or all zeros")
+    x_mean = (x.ravel() * w).sum() / w_tot
+    y_mean = (y.ravel() * w).sum() / w_tot
+    S_matrix = np.cov(
+        x.ravel(), y.ravel(), ddof=0, aweights=w) * w_tot
+    beta1 = S_matrix[0, 1] / S_matrix[0, 0]
+    beta2 = S_matrix[1, 1] / S_matrix[0, 1]
+    if method == 'OLS (Y|X)':
+        beta = beta1
+    elif method == 'OLS (X|Y)':
+        beta = beta2
+    elif method == 'OLS bisector':
+        beta = ((beta1*beta2 - 1 +
+                 np.sqrt((1+beta1**2)*(1+beta2**2))) /
+                (beta1 + beta2))
+    else:
+        raise ValueError("Unknown fitting method: {}".format(method))
+    alpha = y_mean - beta * x_mean
+    return beta, alpha
 
 
 def gaussNd_pdf(x, norm=1., mean=0., cov_matrix=None,
