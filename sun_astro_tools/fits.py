@@ -13,25 +13,25 @@ def clean_header(
     hdr, auto=None, remove_keys=[], keep_keys=[],
     simplify_scale_matrix=True):
     """
-    Clean a fits header and retain only the necessary keywords.
+    Clean a FITS header and retain only the necessary keywords.
 
     Parameters
     ----------
-    hdr : fits header object
-        Header object to be cleaned
-    auto : {None, 'image', 'cube'}, optional
-        If 'image' : retain only relevant WCS keywords for 2D images
-        If 'cube' : retain only relevant WCS keywords for 3D cubes
+    hdr : FITS header object
+        Header to be cleaned
+    auto : {'image', 'cube'}, optional
+        'image' - retain only WCS keywords relevant to 2D images
+        'cube' - retain only WCS keywords relevant to 3D cubes
     remove_keys : iterable, optional
-        Keys to manually remove
+        Keywords to manually remove
     keep_keys : iterable, optional
-        Keys to manually keep
+        Keywords to manually keep
     simplify_scale_matrix : bool, optional
         Whether to reduce CD or PC matrix if possible (default: True)
 
     Returns
     -------
-    newhdr : fits header object
+    newhdr : FITS header object
         Cleaned header
     """
     newhdr = hdr.copy()
@@ -98,28 +98,30 @@ def regrid_header(
 
     Parameters
     ----------
-    hdr : fits header object
-        Header object to be regridded
-    new_crval : array-like with two elements, optional
-        Coordinates of the new reference point
+    hdr : FITS header object
+        Header to be regridded
+    new_crval : array-like, optional
+        Coordinates of the new reference point. Need to be
+        an array-like object with its length equal to the
+        number of celestial coordinate axes.
     new_cdelt : scalar or array-like, optional
         New coordinate increment. Need to be either a scalar
         or an array-like object with its length equal to the
-        number of celestial coordinates
+        number of celestial coordinate axes.
     keep_old_cdelt_sign : bool, optional
         If True (default), perserve the signs of the original
         CDELT parameters; otherwise use the signs specified by
-        the input parameter `new_cdelt`
+        the input parameter `new_cdelt`.
     keep_non_celestial_axes : bool, optional
         If False (default), only retain information about the
         celestial coordinates in the returned header;
-        otherwise retain all WCS coordinates
+        otherwise retain all WCS coordinates.
     keep_keys : iterable, optional
-        Keys to manually keep
+        Keywords to manually keep
 
     Returns
     -------
-    newhdr : fits header object
+    newhdr : FITS header object
         Regridded header
     """
     inwcs = WCS(hdr).reorient_celestial_first()
@@ -195,7 +197,7 @@ def regrid_header(
 def regrid_image_hdu(
     inhdu, newhdr, keep_header_keys=[], **kwargs):
     """
-    Regrid a FITS image HDU (2D or 3D) according to a specified header.
+    Regrid a FITS image HDU according to a new header.
 
     This is a simple wrapper around `~reproject.reproject_interp`.
 
@@ -206,8 +208,7 @@ def regrid_image_hdu(
     newhdr : FITS header object
         New header that defines the new grid
     keep_header_keys : array-like, optional
-        List of keys to keep from the old header in 'inhdu'
-        Default is an empty list.
+        List of keys to keep from the old header in `inhdu`
     **kwargs
         Keywords to be passed to `~reproject.reproject_interp`
 
@@ -216,9 +217,6 @@ def regrid_image_hdu(
     outhdu : FITS HDU object
         Regridded HDU
     """
-    if inhdu.header['NAXIS'] < 2 or inhdu.header['NAXIS'] > 4:
-        raise ValueError("Input HDU has 'NAXIS'={}"
-                         "".format(inhdu.header['NAXIS']))
     hdr = newhdr.copy()
     for key in keep_header_keys:
         hdr[key] = inhdu.header[key]
