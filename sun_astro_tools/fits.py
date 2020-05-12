@@ -1,7 +1,6 @@
 from __future__ import (
     division, print_function, absolute_import, unicode_literals)
 
-import re
 import warnings
 import numpy as np
 from astropy.io import fits
@@ -10,8 +9,8 @@ from reproject import reproject_interp
 
 
 def clean_header(
-    hdr, auto=None, remove_keys=[], keep_keys=[],
-    simplify_scale_matrix=True):
+        hdr, auto=None, remove_keys=[], keep_keys=[],
+        simplify_scale_matrix=True):
     """
     Clean a FITS header and retain only the necessary keywords.
 
@@ -42,15 +41,19 @@ def clean_header(
         'OBS-RA', 'OBS-DEC', 'MJD-OBS', 'DATE-OBS']:
         newhdr.remove(key, ignore_missing=True, remove_all=True)
 
+    # make sure the number of NAXISi is consistent with WCSAXES
+    newwcs = WCS(newhdr)
+    if len(newwcs.pixel_shape) < newwcs.pixel_n_dim:
+        naxis_missing = newwcs.pixel_n_dim - len(newwcs.pixel_shape)
+        for i in range(naxis_missing):
+            newhdr[f"NAXIS{len(newwcs.pixel_shape)+1+i}"] = 1
+
     # auto clean
     if auto == 'image':
-        naxis = 2
-        newwcs = WCS(newhdr).reorient_celestial_first().sub(naxis)
+        newwcs = WCS(newhdr).reorient_celestial_first().sub(2)
     elif auto == 'cube':
-        naxis = 3
-        newwcs = WCS(newhdr).reorient_celestial_first().sub(naxis)
+        newwcs = WCS(newhdr).reorient_celestial_first().sub(3)
     else:
-        naxis = -1
         newwcs = WCS(newhdr)
 
     # simplify pixel scale matrix
@@ -89,8 +92,8 @@ def clean_header(
 
 
 def regrid_header(
-    hdr, new_crval=None, new_cdelt=None, keep_old_cdelt_sign=True,
-    keep_non_celestial_axes=False, keep_keys=[]):
+        hdr, new_crval=None, new_cdelt=None, keep_old_cdelt_sign=True,
+        keep_non_celestial_axes=False, keep_keys=[]):
     """
     Regrid a FITS header while perserving its sky footprint.
 
@@ -195,7 +198,7 @@ def regrid_header(
 
 
 def regrid_image_hdu(
-    inhdu, newhdr, keep_header_keys=[], **kwargs):
+        inhdu, newhdr, keep_header_keys=[], **kwargs):
     """
     Regrid a FITS image HDU according to a new header.
 
