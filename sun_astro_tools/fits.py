@@ -37,8 +37,8 @@ def clean_header(
 
     # remove keywords
     for key in remove_keys + [
-        'WCSAXES', 'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z',
-        'OBS-RA', 'OBS-DEC', 'MJD-OBS', 'DATE-OBS']:
+            'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z', 'OBS-RA', 'OBS-DEC',
+            'WCSAXES']:
         newhdr.remove(key, ignore_missing=True, remove_all=True)
 
     # make sure the number of NAXISi is consistent with WCSAXES
@@ -54,7 +54,7 @@ def clean_header(
     elif auto == 'cube':
         newwcs = WCS(newhdr).reorient_celestial_first().sub(3)
     else:
-        newwcs = WCS(newhdr)
+        newwcs = WCS(newhdr).reorient_celestial_first()
 
     # simplify pixel scale matrix
     if simplify_scale_matrix:
