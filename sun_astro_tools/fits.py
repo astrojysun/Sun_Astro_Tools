@@ -43,7 +43,7 @@ def clean_header(
 
     # make sure the number of NAXISi is consistent with WCSAXES
     newwcs = WCS(newhdr)
-    if len(newwcs.pixel_shape) < newwcs.pixel_n_dim:
+    if newwcs.pixel_shape is not None:
         naxis_missing = newwcs.pixel_n_dim - len(newwcs.pixel_shape)
         for i in range(naxis_missing):
             newhdr[f"NAXIS{len(newwcs.pixel_shape)+1+i}"] = 1
