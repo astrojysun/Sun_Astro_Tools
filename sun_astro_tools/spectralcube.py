@@ -5,7 +5,10 @@ from functools import partial
 import numpy as np
 from scipy.ndimage import generic_filter, binary_dilation, label
 from scipy.stats import pearsonr
+from scipy.special import erf
 from astropy import units as u
+from astropy.io import fits
+from astropy.wcs import WCS
 from astropy.stats import mad_std
 from astropy.convolution import convolve_fft
 from radio_beam import Beam
@@ -13,7 +16,8 @@ from spectral_cube import SpectralCube, Projection
 
 
 def convolve_cube(
-        cube, newbeam, mode='datacube', res_tol=0.0, min_coverage=0.8,
+        incube, newbeam, mode='datacube',
+        res_tol=0.0, min_coverage=0.8,
         append_raw=False, verbose=False, suppress_error=False):
     """
     Convolve a spectral cube or an rms noise cube to a specified beam.
@@ -29,7 +33,7 @@ def convolve_cube(
 
     Parameters
     ----------
-    cube : ~spectral_cube.SpectralCube object
+    incube : FITS HDU object or SpectralCube object
         Input spectral cube
     newbeam : radio_beam.Beam object
         Target beam to convolve to
@@ -42,62 +46,86 @@ def convolve_cube(
     res_tol : float, optional
         Tolerance on the difference between input/output resolution
         By default, a convolution is performed on the input cube
-        whenever its native resolution is different from (sharper than)
+        when its native resolution is different from (sharper than)
         the target resolution. Use this keyword to specify a tolerance
         on resolution, within which no convolution will be performed.
         For example, res_tol=0.1 will allow a 10% tolerance.
     min_coverage : float or None, optional
         When the convolution meets NaN values or edges, the output is
-        calculated based on beam-weighted average. This keyword specifies
-        the minimum beam covering fraction of valid (np.finite) values.
-        All pixels with less beam covering fraction will be assigned NaNs.
-        Default is 80% beam covering fraction (min_coverage=0.8).
+        calculated by beam-weighted average. This keyword specifies
+        a minimum beam covering fraction of valid (np.finite) pixels.
+        Pixels with less beam covering fraction will be assigned NaNs.
+        Default is an 80% beam covering fraction (min_coverage=0.8).
         If the user would rather use the interpolation strategy in
         `astropy.convolution.convolve_fft`, set this keyword to None.
         Note that the NaN pixels will be kept as NaN.
     append_raw : bool, optional
-        Whether to append the raw convolved cube and weight cube
+        Whether to append the raw convolved cube and weight cube.
         Default is not to append.
     verbose : bool, optional
-        Whether to print the detailed processing information in terminal
+        Whether to print the detailed processing log in terminal.
         Default is to not print.
     suppress_error : bool, optional
-        Whether to suppress the error when convolution is unsuccessful
-        Default is to not suppress.
+        Whether to suppress the error message when convolution is
+        unsuccessful. Default is to not suppress.
 
     Returns
     -------
-    outcube : SpectralCube object or tuple
-        Convolved spectral cube (when append_raw=False), or a tuple
-        comprising 3 cubes (when append_raw=True)
+    outcube : FITS HDU objects or SpectralCube objects
+        Convolved spectral cubes (when append_raw=False), or a 3-tuple
+        including a masked verson, an unmaked version, and a coverage
+        fraction cube (when append_raw=True).
+        The output will be the same type of objects as the input.
     """
 
-    if min_coverage is None:
-        # Skip coverage check and preserve NaN values.
-        # This uses the default interpolation strategy
-        # implemented in 'astropy.convolution.convolve_fft'
-        convolve_func = partial(convolve_fft, preserve_nan=True,
-                                allow_huge=True, quiet=~verbose)
+    if isinstance(incube, SpectralCube):
+        cube = incube
+    elif isinstance(incube, (fits.PrimaryHDU, fits.ImageHDU)):
+        if 'BUNIT' in incube.header:
+            unit = u.Unit(incube.header['BUNIT'], parse_strict='warn')
+            if isinstance(unit, u.UnrecognizedUnit):
+                unit = u.dimensionless_unscaled
+        else:
+            unit = u.dimensionless_unscaled
+        cube = SpectralCube(
+            data=incube.data*unit,
+            wcs=WCS(incube.header), header=incube.header,
+            allow_huge_operations=True).with_mask(
+                np.isfinite(incube.data))
     else:
-        # Do coverage check to determine the mask on the output
-        convolve_func = partial(convolve_fft, nan_treatment='fill',
-                                boundary='fill', fill_value=0.,
-                                allow_huge=True, quiet=~verbose)
+        raise ValueError(
+            "`incube` needs to be either a SpectralCube object "
+            "or a FITS HDU object")
 
     if mode not in ('datacube', 'noisecube'):
         raise ValueError("Invalid `mode` value: {}".format(mode))
 
     if (res_tol > 0) and (newbeam.major != newbeam.minor):
-        raise ValueError("You cannot specify a non-zero resolution "
-                         "torelance if the target beam is not round")
+        raise ValueError(
+            "Cannot handle a non-zero resolution torelance "
+            "when the target beam is not round")
+
+    if min_coverage is None:
+        # Skip coverage check and preserve NaN values.
+        # This uses the default interpolation strategy
+        # implemented in 'astropy.convolution.convolve_fft'
+        convolve_func = partial(
+            convolve_fft, preserve_nan=True, allow_huge=True)
+    else:
+        # Do coverage check to determine the mask on the output
+        convolve_func = partial(
+            convolve_fft, nan_treatment='fill',
+            boundary='fill', fill_value=0., allow_huge=True)
 
     tol = newbeam.major * np.array([1-res_tol, 1+res_tol])
     if ((tol[0] < cube.beam.major < tol[1]) and
-        (tol[0] < cube.beam.minor < tol[1])):
+            (tol[0] < cube.beam.minor < tol[1])):
         if verbose:
-            print("Native resolution within tolerance - "
-                  "Copying original cube...")
+            print(
+                "Native resolution within tolerance - "
+                "copying original cube...")
         my_append_raw = False
+        convcube = wtcube = None
         newcube = cube.unmasked_copy().with_mask(cube.mask.include())
     else:
         if verbose:
@@ -135,7 +163,6 @@ def convolve_cube(
         if verbose:
             print("Convolving cube...")
         if mode == 'datacube':
-            # --------------------------------------------------------
             # do convolution
             convcube = cube.convolve_to(
                 newbeam, convolve=convolve_func)
@@ -158,9 +185,8 @@ def convolve_cube(
             else:
                 my_append_raw = False
                 newcube = convcube
-            # --------------------------------------------------------
-        elif mode == 'noisecube':
-            # --------------------------------------------------------
+                wtcube = None
+        else:  # mode == noisecube
             # Analytically derive the rms noise cube for the low
             # resolution data cube. Steps are described as follows:
             # Step 1: square the high resolution noise cube
@@ -168,9 +194,9 @@ def convolve_cube(
             # Step 2: convolve the squared noise cube with a kernel
             #         that is sqrt(2) times narrower than the one
             #         used for data cube convolution
-            beamdiff_small = Beam(major=beamdiff.major/np.sqrt(2),
-                                  minor=beamdiff.minor/np.sqrt(2),
-                                  pa=beamdiff.pa)
+            beamdiff_small = Beam(
+                major=beamdiff.major/np.sqrt(2),
+                minor=beamdiff.minor/np.sqrt(2), pa=beamdiff.pa)
             newbeam_small = cube.beam.convolve(beamdiff_small)
             convcubesq = cubesq.convolve_to(
                 newbeam_small, convolve=convolve_func)
@@ -197,6 +223,7 @@ def convolve_cube(
             else:
                 my_append_raw = False
                 newcubesq = convcubesq
+                wtcube = None
             # Step 3: find the square root of the convolved noise cube
             convcube = np.sqrt(convcubesq)
             newcube = np.sqrt(newcubesq)
@@ -204,12 +231,17 @@ def convolve_cube(
             #         for the decrease in rms noise due to averaging
             convcube *= np.sqrt(cube.beam.sr/newbeam.sr).to('').value
             newcube *= np.sqrt(cube.beam.sr/newbeam.sr).to('').value
-            # --------------------------------------------------------
 
-    if append_raw and my_append_raw:
-        return newcube, convcube, wtcube
-    else:
-        return newcube
+    if isinstance(incube, SpectralCube):
+        if append_raw and my_append_raw:
+            return newcube, convcube, wtcube
+        else:
+            return newcube
+    elif isinstance(incube, (fits.PrimaryHDU, fits.ImageHDU)):
+        if append_raw and my_append_raw:
+            return newcube.hdu, convcube.hdu, wtcube.hdu
+        else:
+            return newcube.hdu
 
 
 def calc_noise_in_cube(
@@ -272,7 +304,7 @@ def calc_noise_in_cube(
         print("Estimating rms noise as a function of channel...")
     if masking_scheme == 'user':
         mask_v = mask
-    elif masking_scheme == 'simple':
+    else:
         rms_v = mad_std(negdata, axis=(1, 2, 3), ignore_nan=True)
         uplim_v = (3 * rms_v * cube.unit).reshape(-1, 1, 1)
         lolim_v = (-3 * rms_v * cube.unit).reshape(-1, 1, 1)
@@ -288,7 +320,7 @@ def calc_noise_in_cube(
         print("Estimating rms noise as a function of sightline...")
     if masking_scheme == 'user':
         mask_s = mask
-    elif masking_scheme == 'simple':
+    else:
         rms_s = mad_std(negdata, axis=(0, 3), ignore_nan=True)
         uplim_s = 3 * rms_s * cube.unit
         lolim_s = -3 * rms_s * cube.unit
@@ -315,7 +347,7 @@ def calc_noise_in_cube(
     # correct the normalization of the rms cube
     if masking_scheme == 'user':
         mask_n = mask
-    elif masking_scheme == 'simple':
+    else:
         rms_n = mad_std(negdata, ignore_nan=True)
         uplim_n = 3 * rms_n * cube.unit
         lolim_n = -3 * rms_n * cube.unit
@@ -463,7 +495,7 @@ def find_signal_in_cube(
             prune_by_npix = beamarea_pix * prune_by_fracbeam
         labels, count = label(mask_signal)
         for ind in np.arange(count)+1:
-            if ((labels == ind).any(axis=0).sum() < prune_by_npix):
+            if (labels == ind).any(axis=0).sum() < prune_by_npix:
                 mask_signal[labels == ind] = False
 
     # expand along spatial dimensions by a fraction of beam FWHM
@@ -500,7 +532,7 @@ def find_signal_in_cube(
     return cube.with_mask(mask_signal)
 
 
-def calc_channel_corr(cube, mask=None):
+def calc_channel_corr(cube, mask=None, channel_lag=1):
     """
     Calculate the channel-to-channel correlation coefficient (Pearson's r)
 
@@ -510,6 +542,10 @@ def calc_channel_corr(cube, mask=None):
         Input spectral cube
     mask : `np.ndarray` object, optional
         User-specified mask, within which to calculate r
+    channel_lag : int
+        Number of channel lag at which the correlation is calculated.
+        Default is 1, which means to estimate correlation at one
+        channel lag (i.e., between immediately adjacent channels)
 
     Returns
     -------
@@ -520,15 +556,84 @@ def calc_channel_corr(cube, mask=None):
     """
     if mask is None:
         mask = cube.mask.include()
-    mask &= np.roll(mask, -1, axis=0)
     mask[-1, :] = False
+    for i in np.arange(channel_lag):
+        mask &= np.roll(mask, -1, axis=0)
+    return pearsonr(
+        cube.filled_data[mask],
+        cube.filled_data[np.roll(mask, channel_lag, axis=0)])
 
-    return pearsonr(cube.filled_data[mask],
-                    cube.filled_data[np.roll(mask, 1, axis=0)])
+
+def censoring_function(
+        line_rms_width, channel_width, T_noise,
+        spec_resp_kernel=[0, 1, 0],
+        nchan_crit=2, snr_crit=2, scenario='optimistic'):
+    """
+    Calculate the shape of the censoring function.
+
+    Parameters
+    ----------
+    line_rms_width: float or array-like
+        The rms width of the Gaussian line profile
+    channel_width: float or array-like
+        The width of spectral channels, in the same unit as
+        `line_rms_width`
+    T_noise: float or array-like
+        Noise temperature (1-sigma level)
+    spec_resp_kernel: array-like with odd number of elements, optional
+        A spectral response kernel designed to reproduce the
+        appropriate channel-to-channel correlation
+        (see Appendix A in Leroy et al. 2016, ApJ, 831, 16)
+    nchan_crit: int, optional (default=2)
+        # of channels used in determining significant detections
+        (e.g., if the criterion is 2 consecutive channels above S/N=5,
+        then `nchan_crit` should be set to 2)
+    snr_crit: float, optional (default=2)
+        S/R ratio used in determining significant detections
+        (e.g., if the criterion is 2 consecutive channels above S/N=5,
+        then `snr_crit` should be set to 5)
+    scenario: {'optimistic', 'pessimistic'}, optional
+        If 'optimistic' (default), this function will return the
+        threshold below which the completeness is 0%.
+        If 'pessimistic', this function will return the threshold
+        above which the completeness is 100%.
+
+    Returns
+    -------
+    line_intensity: float or array-like
+        Completeness threshold in terms of integrated line intensity,
+        carrying a unit of [T_noise] * [line_rms_width]
+    """
+    x = (np.asfarray(channel_width) /
+         (2**0.5 * np.asfarray(line_rms_width)))
+
+    if scenario == 'optimistic':
+        # line center aligns perfectly with
+        # the center of the `nchan_crit` consecutive channels
+        uplim = nchan_crit / 2
+        lolim = nchan_crit / 2 - 1
+    elif scenario == 'pessimistic':
+        # line center is off by half a channel width from
+        # the center of the `nchan_crit` consecutive channels
+        uplim = nchan_crit / 2 + 0.5
+        lolim = nchan_crit / 2 - 0.5
+    else:
+        raise ValueError("Invalid `scenario`")
+
+    kernel = np.asfarray(spec_resp_kernel).flatten()
+    if (kernel.size % 2 == 0) or (kernel.sum() != 1):
+        raise ValueError("Invalid spectral response kernel")
+
+    ind = np.arange(-(kernel.size-1)/2, (kernel.size+1)/2)
+    uplim = (uplim + ind) * x[..., np.newaxis]
+    lolim = (lolim + ind) * x[..., np.newaxis]
+    fraction = ((erf(uplim) - erf(lolim)) / 2 * kernel).sum(axis=-1)
+
+    return np.asfarray(T_noise) * channel_width * snr_crit / fraction
 
 
-def convolve_projection(
-        proj, newbeam, res_tol=0.0, min_coverage=0.8,
+def convolve_image(
+        inimage, newbeam, res_tol=0.0, min_coverage=0.8,
         append_raw=False, verbose=False, suppress_error=False):
     """
     Convolve a 2D image to a specified beam.
@@ -538,81 +643,95 @@ def convolve_projection(
 
     Parameters
     ----------
-    proj : ~spectral_cube.Projection object
+    inimage : FITS HDU object or ~spectral_cube.Projection object
         Input 2D image
     newbeam : radio_beam.Beam object
         Target beam to convolve to
     res_tol : float, optional
         Tolerance on the difference between input/output resolution
         By default, a convolution is performed on the input image
-        whenever its native resolution is different from (sharper than)
+        when its native resolution is different from (sharper than)
         the target resolution. Use this keyword to specify a tolerance
         on resolution, within which no convolution will be performed.
         For example, res_tol=0.1 will allow a 10% tolerance.
     min_coverage : float or None, optional
         When the convolution meets NaN values or edges, the output is
-        calculated based on beam-weighted average. This keyword specifies
-        the minimum beam covering fraction of valid (np.finite) values.
-        All pixels with less beam covering fraction will be assigned NaNs.
-        Default is 80% beam covering fraction (min_coverage=0.8).
+        calculated by beam-weighted average. This keyword specifies
+        a minimum beam covering fraction of valid (np.finite) values.
+        Pixels with less beam covering fraction will be assigned NaNs.
+        Default is an 80% beam covering fraction (min_coverage=0.8).
         If the user would rather use the interpolation strategy in
         `astropy.convolution.convolve_fft`, set this keyword to None.
         Note that the NaN pixels will be kept as NaN.
     append_raw : bool, optional
-        Whether to append the raw convolved image and weight image
+        Whether to append the raw convolved image and weight image.
         Default is not to append.
     verbose : bool, optional
-        Whether to print the detailed processing information in terminal
+        Whether to print the detailed processing log in terminal.
         Default is to not print.
     suppress_error : bool, optional
-        Whether to suppress the error when convolution is unsuccessful
-        Default is to not suppress.
+        Whether to suppress the error message when convolution is
+        unsuccessful. Default is to not suppress.
 
     Returns
     -------
-    outproj : Projection object or tuple
-        Convolved 2D image (when append_raw=False), or a tuple
-        comprising 3 images (when append_raw=True)
+    outimage : FITS HDU objects or Projection objects
+        Convolved 2D images (when append_raw=False), or a 3-tuple
+        including a masked verson, an unmaked version, and a coverage
+        fraction map (when append_raw=True).
+        The output will be the same type of objects as the input.
     """
+
+    if isinstance(inimage, Projection):
+        proj = inimage
+    elif isinstance(inimage, (fits.PrimaryHDU, fits.ImageHDU)):
+        proj = Projection.from_hdu(inimage)
+    else:
+        raise ValueError(
+            "`inimage` needs to be either a FITS HDU object "
+            "or a spectral_cube.Projection object")
+
+    if (res_tol > 0) and (newbeam.major != newbeam.minor):
+        raise ValueError(
+            "Cannot handle a non-zero resolution torelance "
+            "when the target beam is not round")
 
     if min_coverage is None:
         # Skip coverage check and preserve NaN values.
         # This uses the default interpolation strategy
         # implemented in 'astropy.convolution.convolve_fft'
-        convolve_func = partial(convolve_fft, preserve_nan=True,
-                                allow_huge=True, quiet=~verbose)
+        convolve_func = partial(
+            convolve_fft, preserve_nan=True, allow_huge=True)
     else:
         # Do coverage check to determine the mask on the output
-        convolve_func = partial(convolve_fft, nan_treatment='fill',
-                                boundary='fill', fill_value=0.,
-                                allow_huge=True, quiet=~verbose)
-
-    if (res_tol > 0) and (newbeam.major != newbeam.minor):
-        raise ValueError("You cannot specify a non-zero resolution "
-                         "torelance if the target beam is not round")
+        convolve_func = partial(
+            convolve_fft, nan_treatment='fill',
+            boundary='fill', fill_value=0., allow_huge=True)
 
     tol = newbeam.major * np.array([1-res_tol, 1+res_tol])
     if ((tol[0] < proj.beam.major < tol[1]) and
-        (tol[0] < proj.beam.minor < tol[1])):
+            (tol[0] < proj.beam.minor < tol[1])):
         if verbose:
-            print("Native resolution within tolerance - "
-                  "Copying original image...")
+            print(
+                "Native resolution within tolerance - "
+                "Copying original image...")
         my_append_raw = False
         newproj = proj.copy()
+        convproj = wtproj = None
     else:
         if verbose:
             print("Convolving image...")
         try:
-            convproj = proj.convolve_to(newbeam,
-                                        convolve=convolve_func)
+            convproj = proj.convolve_to(
+                newbeam, convolve=convolve_func)
             if min_coverage is not None:
                 # divide the raw convolved image by the weight image
                 my_append_raw = True
                 wtproj = Projection(
                     np.isfinite(proj.data).astype('float'),
                     wcs=proj.wcs, beam=proj.beam)
-                wtproj = wtproj.convolve_to(newbeam,
-                                            convolve=convolve_func)
+                wtproj = wtproj.convolve_to(
+                    newbeam, convolve=convolve_func)
                 newproj = convproj / wtproj.hdu.data
                 # mask all pixels w/ weight smaller than min_coverage
                 threshold = min_coverage * u.dimensionless_unscaled
@@ -620,6 +739,7 @@ def convolve_projection(
             else:
                 my_append_raw = False
                 newproj = convproj
+                wtproj = None
         except ValueError as err:
             if suppress_error:
                 return
@@ -628,7 +748,13 @@ def convolve_projection(
                     "Unsuccessful convolution: {}\nOld: {}\nNew: {}"
                     "".format(err, proj.beam, newbeam))
 
-    if append_raw and my_append_raw:
-        return newproj, convproj, wtproj
-    else:
-        return newproj
+    if isinstance(inimage, Projection):
+        if append_raw and my_append_raw:
+            return newproj, convproj, wtproj
+        else:
+            return newproj
+    elif isinstance(inimage, (fits.PrimaryHDU, fits.ImageHDU)):
+        if append_raw and my_append_raw:
+            return newproj.hdu, convproj.hdu, wtproj.hdu
+        else:
+            return newproj.hdu

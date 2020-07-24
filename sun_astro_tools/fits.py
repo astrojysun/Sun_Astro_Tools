@@ -1,7 +1,6 @@
 from __future__ import (
     division, print_function, absolute_import, unicode_literals)
 
-import re
 import warnings
 import numpy as np
 from astropy.io import fits
@@ -9,75 +8,56 @@ from astropy.wcs import WCS
 from reproject import reproject_interp
 
 
-def clean_header(hdr, remove_keys=[], keep_keys=[],
-                 simplify_scale_matrix=True):
+def clean_header(
+        hdr, auto=None, remove_keys=[], keep_keys=[],
+        simplify_scale_matrix=True):
     """
-    Clean a fits header and retain only the necessary keywords.
+    Clean a FITS header and retain only the necessary keywords.
 
     Parameters
     ----------
-    hdr : fits header object
-        Header object to be cleaned
-    remove_keys : {'3D', '2D', 'celestial', iterable}, optional
-        List of keys to remove before feeding the header to WCS
-        If set to '3D', remove keys irrelevant to 3D data cubes;
-        if set to '2D', remove keys irrelevant to 2D images;
-        if set to 'celestial', remove keys irrelevant to the
-        celestial coordinate frame.
+    hdr : FITS header object
+        Header to be cleaned
+    auto : {'image', 'cube'}, optional
+        'image' - retain only WCS keywords relevant to 2D images
+        'cube' - retain only WCS keywords relevant to 3D cubes
+    remove_keys : iterable, optional
+        Keywords to manually remove
     keep_keys : iterable, optional
-        List of keys to keep
+        Keywords to manually keep
     simplify_scale_matrix : bool, optional
         Whether to reduce CD or PC matrix if possible (default: True)
 
     Returns
     -------
-    newhdr : fits header object
+    newhdr : FITS header object
         Cleaned header
     """
     newhdr = hdr.copy()
-    if remove_keys == '3D':
-        newhdr['NAXIS'] = 3
-        rmkeys = [
-            'WCSAXES', 'NAXIS4', 'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z',
-            'OBS-RA', 'OBS-DEC', 'MJD-OBS', 'DATE-OBS',
-        ]
-        for key in rmkeys:
-            newhdr.remove(key, ignore_missing=True, remove_all=True)
-        for key in hdr:
-            if re.match('^C[A-Z]*[4]$', key) is not None:
-                newhdr.remove(key, remove_all=True)
-            if re.match('^PC[0-9_]*[4][0-9_]*', key) is not None:
-                newhdr.remove(key, remove_all=True)
-    elif remove_keys == '2D':
-        newhdr['NAXIS'] = 2
-        rmkeys = [
-            'WCSAXES', 'SPECSYS', 'RESTFRQ', 'NAXIS3', 'NAXIS4',
-            'OBS-RA', 'OBS-DEC', 'MJD-OBS', 'DATE-OBS',
-            'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z',
-        ]
-        for key in rmkeys:
-            newhdr.remove(key, ignore_missing=True, remove_all=True)
-        for key in hdr:
-            if re.match('^C[A-Z]*[34]$', key) is not None:
-                newhdr.remove(key, remove_all=True)
-            if re.match('^PC[0-9_]*[34][0-9_]*', key) is not None:
-                newhdr.remove(key, remove_all=True)
-    elif remove_keys == 'celestial':
-        rmkeys = ['WCSAXES', 'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z']
-        for key in rmkeys:
-            newhdr.remove(key, ignore_missing=True, remove_all=True)
-        newhdr = WCS(newhdr).celestial.to_header()
-        rmkeys = ['WCSAXES', 'SPECSYS', 'RESTFRQ',
-                  'MJD-OBS', 'DATE-OBS', 'OBS-RA', 'OBS-DEC']
-        for key in rmkeys:
-            newhdr.remove(key, ignore_missing=True, remove_all=True)
-    else:
-        rmkeys = (remove_keys +
-                  ['WCSAXES', 'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z',
-                   'OBS-RA', 'OBS-DEC', 'MJD-OBS', 'DATE-OBS'])
+
+    # remove keywords
+    for key in remove_keys + [
+            'OBSGEO-X', 'OBSGEO-Y', 'OBSGEO-Z', 'OBS-RA', 'OBS-DEC',
+            'WCSAXES']:
+        newhdr.remove(key, ignore_missing=True, remove_all=True)
+
+    # make sure the number of NAXISi is consistent with WCSAXES
     newwcs = WCS(newhdr)
+    if newwcs.pixel_shape is not None:
+        naxis_missing = newwcs.pixel_n_dim - len(newwcs.pixel_shape)
+        for i in range(naxis_missing):
+            newhdr[f"NAXIS{len(newwcs.pixel_shape)+1+i}"] = 1
+
+    # auto clean
+    if auto == 'image':
+        newwcs = WCS(newhdr).reorient_celestial_first().sub(2)
+    elif auto == 'cube':
+        newwcs = WCS(newhdr).reorient_celestial_first().sub(3)
+    else:
+        newwcs = WCS(newhdr).reorient_celestial_first()
+
+    # simplify pixel scale matrix
     if simplify_scale_matrix:
-        # simplify pixel scale matrix
         mask = ~np.eye(newwcs.pixel_scale_matrix.shape[0]).astype('?')
         if not any(newwcs.pixel_scale_matrix[mask]):
             cdelt = newwcs.pixel_scale_matrix.diagonal()
@@ -85,21 +65,142 @@ def clean_header(hdr, remove_keys=[], keep_keys=[],
             del newwcs.wcs.cd
             newwcs.wcs.cdelt = cdelt
         else:
-            warnings.warn("WCS pixel scale matrix has non-zero "
-                          "off-diagonal elements. 'CDELT' keywords "
-                          "might not reflect actual pixel size.")
+            warnings.warn(
+                "WCS pixel scale matrix has non-zero "
+                "off-diagonal elements. 'CDELT' keywords "
+                "might not reflect actual pixel size.")
+
+    # construct new header
     newhdr = newwcs.to_header()
+    # insert mandatory keywords
+    if newwcs.pixel_shape is not None:
+        for i in range(newwcs.pixel_n_dim):
+            newhdr.insert(
+                i, ('NAXIS{}'.format(i+1), newwcs.pixel_shape[i]))
+    newhdr.insert(0, ('NAXIS', newhdr['WCSAXES']))
     newhdr.remove('WCSAXES')
-    for key in keep_keys:
+    for key in ['BITPIX', 'SIMPLE']:
         if key in hdr:
-            newhdr[key] = hdr[key]
+            newhdr.insert(0, (key, hdr[key]))
+    # retain old keywords
+    for key in keep_keys:
+        if key not in hdr:
+            continue
+        newhdr[key] = hdr[key]
+
     return newhdr
 
 
-def regrid_image_hdu(inhdu, newhdr, keep_header_keys=[],
-                     **kwargs):
+def regrid_header(
+        hdr, new_crval=None, new_cdelt=None, keep_old_cdelt_sign=True,
+        keep_non_celestial_axes=False, keep_keys=[]):
     """
-    Regrid a FITS image HDU (2D or 3D) according to a specified header.
+    Regrid a FITS header while perserving its sky footprint.
+
+    Note that only the celestial coordinates are regridded.
+
+    Parameters
+    ----------
+    hdr : FITS header object
+        Header to be regridded
+    new_crval : array-like, optional
+        Coordinates of the new reference point. Need to be
+        an array-like object with its length equal to the
+        number of celestial coordinate axes.
+    new_cdelt : scalar or array-like, optional
+        New coordinate increment. Need to be either a scalar
+        or an array-like object with its length equal to the
+        number of celestial coordinate axes.
+    keep_old_cdelt_sign : bool, optional
+        If True (default), perserve the signs of the original
+        CDELT parameters; otherwise use the signs specified by
+        the input parameter `new_cdelt`.
+    keep_non_celestial_axes : bool, optional
+        If False (default), only retain information about the
+        celestial coordinates in the returned header;
+        otherwise retain all WCS coordinates.
+    keep_keys : iterable, optional
+        Keywords to manually keep
+
+    Returns
+    -------
+    newhdr : FITS header object
+        Regridded header
+    """
+    inwcs = WCS(hdr).reorient_celestial_first()
+    naxes = np.array(inwcs.pixel_shape)
+    # check pixel scale matrix
+    mask = ~np.eye(inwcs.pixel_scale_matrix.shape[0]).astype('?')
+    if any(inwcs.pixel_scale_matrix[mask]):
+        raise ValueError(
+            "Unable to simplify WCS pixel scale matrix: "
+            "non-zero off-diagonal elements")
+    # simplify pixel scale matrix
+    cdelt = inwcs.pixel_scale_matrix.diagonal()
+    del inwcs.wcs.pc
+    del inwcs.wcs.cd
+    inwcs.wcs.cdelt = cdelt
+
+    # regrid celestial coordinates
+    wcs_cel = inwcs.celestial.copy()
+    footprint_world = wcs_cel.calc_footprint()
+    if new_crval is not None:
+        wcs_cel.wcs.crval = np.asfarray(new_crval)
+    if new_cdelt is not None:
+        if keep_old_cdelt_sign:
+            wcs_cel.wcs.cdelt = (
+                np.abs(new_cdelt) *
+                np.sign(wcs_cel.wcs.cdelt))
+        else:
+            wcs_cel.wcs.cdelt = (
+                np.asfarray(new_cdelt) *
+                np.ones_like(wcs_cel.wcs.cdelt))
+    # adjust CRPIX so that the "lower left corner" is near (1, 1)
+    footprint_pix = wcs_cel.all_world2pix(footprint_world, 1)
+    wcs_cel.wcs.crpix -= np.floor(footprint_pix.min(axis=0)) - 1
+    # find new NAXISi
+    footprint_pix = wcs_cel.all_world2pix(footprint_world, 1)
+    naxes_cel = np.ceil(footprint_pix.max(axis=0)).astype('int')
+    naxes = np.hstack((naxes_cel, naxes[wcs_cel.pixel_n_dim:]))
+
+    # construct new header
+    newhdr = wcs_cel.to_header()
+    if not keep_non_celestial_axes:
+        # add 'NAXISi'
+        for i in range(wcs_cel.pixel_n_dim):
+            newhdr.insert(
+                i, ('NAXIS{}'.format(i+1), naxes_cel[i]))
+        # add 'NAXIS'
+        newhdr.insert(0, ('NAXIS', wcs_cel.pixel_n_dim))
+    else:
+        # add WCS keywords for non-celestial axes
+        allhdr = inwcs.to_header()
+        for key in allhdr:
+            if key not in newhdr:
+                newhdr[key] = (allhdr[key], allhdr.comments[key])
+        newhdr = WCS(newhdr).to_header()
+        # add 'NAXISi'
+        for i in range(inwcs.pixel_n_dim):
+            newhdr.insert(
+                i, ('NAXIS{}'.format(i+1), naxes[i]))
+        # add 'NAXIS'
+        newhdr.insert(0, ('NAXIS', inwcs.pixel_n_dim))
+    # add other mandatory keywords
+    for key in ['BITPIX', 'SIMPLE']:
+        if key in hdr:
+            newhdr.insert(0, (key, hdr[key]))
+    newhdr.remove('WCSAXES')
+    # retain old keywords
+    for key in keep_keys:
+        newhdr[key] = hdr[key]
+
+    return newhdr
+
+
+def regrid_image_hdu(
+        inhdu, newhdr, keep_header_keys=[], **kwargs):
+    """
+    Regrid a FITS image HDU according to a new header.
 
     This is a simple wrapper around `~reproject.reproject_interp`.
 
@@ -110,8 +211,7 @@ def regrid_image_hdu(inhdu, newhdr, keep_header_keys=[],
     newhdr : FITS header object
         New header that defines the new grid
     keep_header_keys : array-like, optional
-        List of keys to keep from the old header in 'inhdu'
-        Default is an empty list.
+        List of keys to keep from the old header in `inhdu`
     **kwargs
         Keywords to be passed to `~reproject.reproject_interp`
 
@@ -120,16 +220,10 @@ def regrid_image_hdu(inhdu, newhdr, keep_header_keys=[],
     outhdu : FITS HDU object
         Regridded HDU
     """
-    if inhdu.header['NAXIS'] < 2 or inhdu.header['NAXIS'] > 4:
-        raise ValueError("Input HDU has 'NAXIS'={}"
-                         "".format(inhdu.header['NAXIS']))
-
     hdr = newhdr.copy()
     for key in keep_header_keys:
         hdr[key] = inhdu.header[key]
-
     data_proj, footprint = reproject_interp(inhdu, hdr, **kwargs)
     data_proj[~footprint.astype('?')] = np.nan
     newhdu = inhdu.__class__(data_proj, hdr)
-    
     return newhdu
