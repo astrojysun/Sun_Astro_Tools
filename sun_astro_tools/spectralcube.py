@@ -5,7 +5,10 @@ from functools import partial
 import numpy as np
 from scipy.ndimage import generic_filter, binary_dilation, label
 from scipy.stats import pearsonr
+from scipy.special import erf
 from astropy import units as u
+from astropy.io import fits
+from astropy.wcs import WCS
 from astropy.stats import mad_std
 from astropy.convolution import convolve_fft
 from radio_beam import Beam
@@ -554,6 +557,74 @@ def calc_channel_corr(cube, mask=None):
 
     return pearsonr(cube.filled_data[mask],
                     cube.filled_data[np.roll(mask, 1, axis=0)])
+
+
+def censoring_function(
+        line_rms_width, channel_width, T_noise,
+        spec_resp_kernel=[0, 1, 0],
+        nchan_crit=2, snr_crit=2, scenario='optimistic'):
+    """
+    Calculate the shape of the censoring function.
+
+    Parameters
+    ----------
+    line_rms_width: float or array-like
+        The rms width of the Gaussian line profile
+    channel_width: float or array-like
+        The width of spectral channels, in the same unit as
+        `line_rms_width`
+    T_noise: float or array-like
+        Noise temperature (1-sigma level)
+    spec_resp_kernel: array-like with odd number of elements, optional
+        A spectral response kernel designed to reproduce the
+        appropriate channel-to-channel correlation
+        (see Appendix A in Leroy et al. 2016, ApJ, 831, 16)
+    nchan_crit: int, optional (default=2)
+        # of channels used in determining significant detections
+        (e.g., if the criterion is 2 consecutive channels above S/N=5,
+        then `nchan_crit` should be set to 2)
+    snr_crit: float, optional (default=2)
+        S/R ratio used in determining significant detections
+        (e.g., if the criterion is 2 consecutive channels above S/N=5,
+        then `snr_crit` should be set to 5)
+    scenario: {'optimistic', 'pessimistic'}, optional
+        If 'optimistic' (default), this function will return the
+        threshold below which the completeness is 0%.
+        If 'pessimistic', this function will return the threshold
+        above which the completeness is 100%.
+
+    Returns
+    -------
+    line_intensity: float or array-like
+        Completeness threshold in terms of integrated line intensity,
+        carrying a unit of [T_noise] * [line_rms_width]
+    """
+    x = (np.asfarray(channel_width) /
+         (2**0.5 * np.asfarray(line_rms_width)))
+
+    if scenario == 'optimistic':
+        # line center aligns perfectly with
+        # the center of the `nchan_crit` consecutive channels
+        uplim = nchan_crit / 2
+        lolim = nchan_crit / 2 - 1
+    elif scenario == 'pessimistic':
+        # line center is off by half a channel width from
+        # the center of the `nchan_crit` consecutive channels
+        uplim = nchan_crit / 2 + 0.5
+        lolim = nchan_crit / 2 - 0.5
+    else:
+        raise ValueError("Invalid `scenario`")
+
+    kernel = np.asfarray(spec_resp_kernel).flatten()
+    if (kernel.size % 2 == 0) or (kernel.sum() != 1):
+        raise ValueError("Invalid spectral response kernel")
+
+    ind = np.arange(-(kernel.size-1)/2, (kernel.size+1)/2)
+    uplim = (uplim + ind) * x[..., np.newaxis]
+    lolim = (lolim + ind) * x[..., np.newaxis]
+    fraction = ((erf(uplim) - erf(lolim)) / 2 * kernel).sum(axis=-1)
+
+    return np.asfarray(T_noise) * channel_width * snr_crit / fraction
 
 
 def convolve_image(
