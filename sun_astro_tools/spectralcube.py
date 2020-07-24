@@ -532,7 +532,7 @@ def find_signal_in_cube(
     return cube.with_mask(mask_signal)
 
 
-def calc_channel_corr(cube, mask=None):
+def calc_channel_corr(cube, mask=None, channel_lag=1):
     """
     Calculate the channel-to-channel correlation coefficient (Pearson's r)
 
@@ -542,6 +542,10 @@ def calc_channel_corr(cube, mask=None):
         Input spectral cube
     mask : `np.ndarray` object, optional
         User-specified mask, within which to calculate r
+    channel_lag : int
+        Number of channel lag at which the correlation is calculated.
+        Default is 1, which means to estimate correlation at one
+        channel lag (i.e., between immediately adjacent channels)
 
     Returns
     -------
@@ -552,11 +556,12 @@ def calc_channel_corr(cube, mask=None):
     """
     if mask is None:
         mask = cube.mask.include()
-    mask &= np.roll(mask, -1, axis=0)
     mask[-1, :] = False
-
-    return pearsonr(cube.filled_data[mask],
-                    cube.filled_data[np.roll(mask, 1, axis=0)])
+    for i in np.arange(channel_lag):
+        mask &= np.roll(mask, -1, axis=0)
+    return pearsonr(
+        cube.filled_data[mask],
+        cube.filled_data[np.roll(mask, channel_lag, axis=0)])
 
 
 def censoring_function(
