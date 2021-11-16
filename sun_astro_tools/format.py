@@ -25,6 +25,11 @@ def num2latex(
     -------
     code : string
         Corresponding LaTeX (math mode) code
+
+    See Also
+    --------
+    `numpy.format_float_scientific`,
+    `numpy.format_float_positional`
     """
 
     if not (precision > 0 and isinstance(precision, int)):
@@ -43,17 +48,18 @@ def num2latex(
             sci = True
         elif scientific_notation == 'auto' and (
                 (abs(value) >= 1e3) or (0 < abs(value) < 1e-3) or
-                (precision < np.max(dex, 0)+1)):
+                (precision < dex + 1)):
             sci = True
         else:
             sci = False
         if sci:
             s = ("{:."+str(precision-1)+"e}").format(value)
             s_nval, s_exp = s.split('e')
-            code = (
-                s_nval + r" \times 10^{" + str(int(s_exp)) + "}")
+            code = s_nval + r"\times10^{" + str(int(s_exp)) + "}"
         else:
-            code = ("{:."+str(precision-dex-1)+"f}").format(value)
+            val = np.round(value/10**dex, precision-1) * 10**dex
+            code = (
+                "{:."+str(max(precision-dex-1, 0))+"f}").format(val)
 
     if with_dollar:
         return "$" + code + "$"
