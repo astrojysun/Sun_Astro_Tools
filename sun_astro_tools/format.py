@@ -6,7 +6,7 @@ import numpy as np
 
 def num2latex(
         value, precision=2, scientific_notation='auto',
-        with_dollar=True):
+        with_dollar=False):
     """
     Generate LaTeX code for a number (with given precision).
 
