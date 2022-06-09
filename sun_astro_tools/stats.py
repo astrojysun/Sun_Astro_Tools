@@ -82,7 +82,7 @@ def running_mean(x, y, xbins):
         bins=xbins, statistic=np.nanmean)[0]
 
 
-def running_percentile(x, y, xbins, q):
+def running_percentile(x, y, xbins, q, min_count=0):
     """
     Compute the qth percentile of y for all data points in each x-bin.
 
@@ -96,6 +96,9 @@ def running_percentile(x, y, xbins, q):
         Bin edges, including the rightmost edge
     q : float in range of [0,100] (or sequence of floats)
         Percentile to compute, to be passed along to `np.percentile`
+    min_count : int, optional
+        Minimal number count of data points in each x-bin. Bins that
+        include less data points will yield NaNs.
 
     Returns
     -------
@@ -108,7 +111,7 @@ def running_percentile(x, y, xbins, q):
     for ibin in range(nbin):
         mask = ((x >= xbins[ibin]) & (x < xbins[ibin + 1]) &
                 np.isfinite(y))
-        if mask.sum() == 0:
+        if not mask.sum() > min_count:
             continue
         yinbin = y[mask]
         percentiles[:, ibin] = np.percentile(yinbin, q)
