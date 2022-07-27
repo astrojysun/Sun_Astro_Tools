@@ -1,28 +1,31 @@
-from __future__ import (
-    division, print_function, absolute_import, unicode_literals)
+from __future__ import \
+    division, print_function, absolute_import, unicode_literals
 
 import numpy as np
 import astropy.units as u
 from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord
+from reproject import reproject_interp
+from reproject.mosaicking import find_optimal_celestial_wcs
 
 
-def deproject(center_coord=None, incl=0*u.deg, pa=0*u.deg,
-              header=None, wcs=None, naxis=None, ra=None, dec=None,
-              return_offset=False):
+def deproject(
+        center_coord=None, incl=0*u.deg, pa=0*u.deg,
+        header=None, wcs=None, naxis=None, ra=None, dec=None,
+        return_offset=False):
 
     """
-    Calculate deprojected radii and projected angles in a disk.
+    Calculate deprojected coordinates from sky coordinates.
 
-    This function deals with projected images of astronomical objects
-    with an intrinsic disk geometry. Given sky coordinates of the
-    disk center, disk inclination and position angle, this function
-    calculates deprojected radii and projected angles based on
+    This function deals with sky images of astronomical objects with
+    an intrinsic disk geometry. Given disk center coordinates,
+    inclination, and position angle, it calculates the deprojected
+    coordinates in the disk plane (radius and azimuthal angle) from
     (1) a FITS header (`header`), or
     (2) a WCS object with specified axis sizes (`wcs` + `naxis`), or
     (3) RA and DEC coodinates (`ra` + `dec`).
-    Both deprojected radii and projected angles are defined relative
-    to the center in the inclined disk frame. For (1) and (2), the
+    Note that the deprojected azimuthal angle is defined w.r.t. the
+    line of nodes (given by the position angle). For (1) and (2), the
     outputs are 2D images; for (3), the outputs are arrays with shapes
     matching the broadcasted shape of `ra` and `dec`.
 
@@ -52,7 +55,7 @@ def deproject(center_coord=None, incl=0*u.deg, pa=0*u.deg,
 
     Returns
     -------
-    deprojected coordinates : list of arrays
+    deprojected_coordinates : list of arrays
         If `return_offset` is set to True, the returned arrays include
         deprojected radii, projected angles, as well as angular offset
         coordinates along East-West and North-South direction;
@@ -128,3 +131,90 @@ def deproject(center_coord=None, incl=0*u.deg, pa=0*u.deg,
         return radius_deg, projang_deg, dx_deg, dy_deg
     else:
         return radius_deg, projang_deg
+
+
+def deproject_image(
+        in_hdu, incl=0*u.deg, pa=0*u.deg, return_footprint=False,
+        **kwargs):
+
+    """
+    Deproject an image given inclination & position angles.
+
+    This function deals with sky images of astronomical objects with
+    an intrinsic disk geometry. Given disk inclination and position
+    angle, it rotates and stretches an image in order to 'deproject'
+    it into the disk plane. Note that the line of nodes coincides with
+    the y-axis in the output image (with positive-y matching the side
+    identified by the position angle).
+
+    This function essentially resamples the original image into a
+    new WCS. This is implemented with `reproject.reproject_interp`.
+
+    Parameters
+    ----------
+    in_hdu : FITS HDU object
+        Input image
+    incl : `~astropy.units.Quantity` object or number, optional
+        Inclination angle of the disk (0 degree means face-on)
+        Default is 0 degree.
+    pa : `~astropy.units.Quantity` object or number, optional
+        Position angle of the disk (red/receding side, North->East)
+        Default is 0 degree.
+    return_footprint : bool, optional
+        If True, also return the footprint of the original image.
+        Default: False
+    kwargs :
+        Other keywords to be passed to `reproject.reproject_interp`
+
+    Returns
+    -------
+    out_image : numpy array
+        Deprojected image
+    out_wcs : `astropy.wcs.WCS` object
+        Corresponding WCS for the deprojected image
+    footprint : numpy array
+        Present if `return_footprint=True`
+    """
+
+    if hasattr(incl, 'unit'):
+        incl_deg = incl.to(u.deg).value
+    else:
+        incl_deg = incl
+    if hasattr(pa, 'unit'):
+        pa_deg = pa.to(u.deg).value
+    else:
+        pa_deg = pa
+
+    scaling_array = np.array([1/np.cos(np.deg2rad(incl_deg)), 1])
+    scaling_ratio = scaling_array[1] / scaling_array[0]
+    rot_rad = np.deg2rad(pa_deg)
+    rot_matrix = np.array(
+        [[np.cos(rot_rad), -np.sin(rot_rad) / scaling_ratio],
+         [np.sin(rot_rad) * scaling_ratio, np.cos(rot_rad)]])
+
+    new_wcs, new_shape = find_optimal_celestial_wcs([in_hdu])
+    # check if the new pixel scale matrix is diagonal
+    mask = ~np.eye(new_wcs.pixel_scale_matrix.shape[0]).astype('?')
+    if any(new_wcs.pixel_scale_matrix[mask]):
+        raise ValueError(
+            "Unable to simplify WCS pixel scale matrix...")
+    # modify WCS to handle rotation and stretch
+    if new_wcs.wcs.has_pc():
+        new_wcs.wcs.pc = rot_matrix
+        new_wcs.wcs.cdelt /= scaling_array
+    else:
+        raise ValueError("I can only handle PC matrix for now...")
+    new_wcs.wcs.crpix *= scaling_array
+    new_hdr = new_wcs.to_header()
+    new_hdr['NAXIS'] = new_hdr['WCSAXES']
+    new_hdr['NAXIS2'], new_hdr['NAXIS1'] = (
+        np.array(new_shape) * scaling_array[::-1]).astype('int')
+
+    if return_footprint:
+        new_img, footprint = reproject_interp(
+            in_hdu, new_hdr, return_footprint=return_footprint)
+        return new_img, new_wcs, footprint
+    else:
+        new_img = reproject_interp(
+            in_hdu, new_hdr, return_footprint=return_footprint)
+        return new_img, new_wcs
