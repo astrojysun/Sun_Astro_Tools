@@ -50,15 +50,15 @@ def deproject(
     dec : array-like, optional
         DEC coordinate of the sky locations of interest
     return_offset : bool, optional
-        Whether to return the angular offset coordinates together with
-        deprojected radii and angles. Default is to not return.
+        Whether to also return angular offset coordinates together with
+        the deprojected radii and angles. Default is to not return.
 
     Returns
     -------
     deprojected_coordinates : list of arrays
         If `return_offset` is set to True, the returned arrays include
         deprojected radii, projected angles, as well as angular offset
-        coordinates along East-West and North-South direction;
+        coordinates along the RA-Dec and major-minor directions;
         otherwise only the former two arrays will be returned.
 
     Notes
@@ -128,7 +128,8 @@ def deproject(
     projang_deg = np.rad2deg(np.arctan2(deprojdy_deg, deprojdx_deg))
 
     if return_offset:
-        return radius_deg, projang_deg, dx_deg, dy_deg
+        return radius_deg, projang_deg, \
+            dx_deg, dy_deg, deprojdx_deg, deprojdy_deg
     else:
         return radius_deg, projang_deg
 
